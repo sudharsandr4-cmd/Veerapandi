@@ -9,7 +9,10 @@ from database import (
 )
 from pdf_parser import extract_voters_from_pdf
 
-app = Flask(__name__, template_folder='../frontend/templates', static_folder='../frontend/static')
+base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+app = Flask(__name__,
+    template_folder=os.path.join(base_dir, 'frontend', 'templates'),
+    static_folder=os.path.join(base_dir, 'frontend', 'static'))
 CORS(app, resources={
     r"/api/*": {
         "origins": ["*"]
