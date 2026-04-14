@@ -6,6 +6,14 @@ EPIC_PATTERNS = (
     re.compile(r'\b[A-Z]{3}\d{7}\b'),
     re.compile(r'\b[A-Z]{2}\d{2}[A-Z0-9]{7}\b'),
 )
+ENTRY_START_PATTERN = re.compile(r'^\d{1,4}$')
+PART_NUMBER_PATTERN = re.compile(r'(?i)\b(?:part|booth|polling(?:\s+station)?)\s*no\.?\s*[:\-]?\s*(\d+)\b')
+CARD_ENTRY_PATTERN = re.compile(
+    r'(?is)(?:^|\n)\s*(\d{1,4})\s+'
+    r'([A-Z]{3}\d{7}|[A-Z]{2}\d{2}[A-Z0-9]{7})\s+'
+    r'Name\s*:\s*([^:\n]+?)\s+'
+    r'(?:Father\s+Name|Husband\s+Name|Mother\s+Name|Wife\s+Name|House\s+Number|Age)\b'
+)
 
 class VoterPDFParser:
     """Parser for voter list PDFs"""
@@ -14,6 +22,7 @@ class VoterPDFParser:
         self.pdf_path = pdf_path
         self.voters = []
         self.booths = set()
+        self.seen_voter_ids = set()
     
     def parse(self) -> Tuple[List[Dict], set]:
         """
@@ -66,10 +75,19 @@ class VoterPDFParser:
     def _parse_text(self, text: str):
         """Parse text content - pattern matching fallback"""
         lines = text.split('\n')
-        
-        current_booth = None
-        
-        for line in lines:
+        current_booth = self._extract_part_number(text)
+
+        # First try the actual electoral-roll card format.
+        if self._parse_card_entries(text, current_booth):
+            return
+
+        current_serial = None
+        current_voter_id = None
+        current_name = None
+
+        for raw_line in lines:
+            line = raw_line.strip()
+            normalized = self._normalize_line(line)
             line = line.strip()
             if not line:
                 continue
@@ -80,23 +98,47 @@ class VoterPDFParser:
                 booth_match = re.search(r'(?:[Bb]ooth|[Pp]olling(?:\s+[Ss]tation)?)\s*(?:[Nn]o\.?|[:\-])?\s*(\d+)', line)
                 if booth_match:
                     current_booth = booth_match.group(1)
-            
-            epic_match = self._extract_epic(line)
-            
-            if epic_match and current_booth:
-                voter_id = epic_match.group(0)
-                
-                voter_name = self._extract_name_from_text_line(line, voter_id)
 
-                voter_info = {
-                    'voter_name': voter_name,
-                    'voter_id': voter_id,
-                    'booth_number': current_booth
-                }
+            part_match = PART_NUMBER_PATTERN.search(line)
+            if part_match:
+                current_booth = part_match.group(1)
 
-                if self._is_valid_voter(voter_info):
-                    self.voters.append(voter_info)
-                    self.booths.add(current_booth)
+            if ENTRY_START_PATTERN.match(normalized):
+                self._append_if_complete(current_name, current_voter_id, current_booth)
+                current_serial = normalized
+                current_voter_id = None
+                current_name = None
+                continue
+
+            epic_match = self._extract_epic(normalized)
+            if epic_match:
+                current_voter_id = epic_match.group(0)
+
+                # A compact single-line entry sometimes contains ID and Name.
+                inline_name = self._extract_name_from_text_line(normalized, current_voter_id)
+                if inline_name and inline_name != normalized:
+                    current_name = inline_name
+
+                self._append_if_complete(current_name, current_voter_id, current_booth)
+                continue
+
+            extracted_name = self._extract_name_from_label(normalized)
+            if extracted_name:
+                current_name = extracted_name
+                self._append_if_complete(current_name, current_voter_id, current_booth)
+                continue
+
+            # Some PDFs output serial + voter ID on the same text line.
+            serial_and_id_match = re.match(
+                r'^(\d{1,4})\s+([A-Z]{3}\d{7}|[A-Z]{2}\d{2}[A-Z0-9]{7})\b',
+                normalized
+            )
+            if serial_and_id_match:
+                self._append_if_complete(current_name, current_voter_id, current_booth)
+                current_serial = serial_and_id_match.group(1)
+                current_voter_id = serial_and_id_match.group(2)
+                current_name = self._extract_name_from_label(normalized)
+                self._append_if_complete(current_name, current_voter_id, current_booth)
     
     def _extract_voter_from_row(self, row) -> Dict or None:
         """Extract voter information from a table row"""
@@ -131,6 +173,9 @@ class VoterPDFParser:
             
             # Return if we have the minimum required info
             if self._is_valid_voter(voter_info):
+                if self._is_duplicate_voter(voter_info['voter_id']):
+                    return None
+                self.seen_voter_ids.add(voter_info['voter_id'])
                 return voter_info
             
             return None
@@ -162,6 +207,76 @@ class VoterPDFParser:
         
         return True
 
+    def _parse_card_entries(self, text: str, booth_number: str | None) -> bool:
+        """Parse electoral-roll card layouts like serial + voter ID + Name."""
+        matches = list(CARD_ENTRY_PATTERN.finditer(text))
+        if not matches or not booth_number:
+            return False
+
+        found = False
+        for match in matches:
+            voter_info = {
+                'voter_name': self._clean_name(match.group(3)),
+                'voter_id': match.group(2),
+                'booth_number': booth_number,
+            }
+            if self._is_valid_voter(voter_info) and not self._is_duplicate_voter(voter_info['voter_id']):
+                self.voters.append(voter_info)
+                self.booths.add(booth_number)
+                self.seen_voter_ids.add(voter_info['voter_id'])
+                found = True
+        return found
+
+    def _append_if_complete(self, voter_name: str | None, voter_id: str | None, booth_number: str | None):
+        """Append a voter only when the three required fields are present."""
+        if not (voter_name and voter_id and booth_number):
+            return
+
+        voter_info = {
+            'voter_name': self._clean_name(voter_name),
+            'voter_id': voter_id,
+            'booth_number': booth_number,
+        }
+        if self._is_valid_voter(voter_info) and not self._is_duplicate_voter(voter_id):
+            self.voters.append(voter_info)
+            self.booths.add(booth_number)
+            self.seen_voter_ids.add(voter_id)
+
+    def _extract_part_number(self, text: str) -> str | None:
+        """Use Part No. as the booth identifier for electoral-roll PDFs."""
+        match = PART_NUMBER_PATTERN.search(text or '')
+        return match.group(1) if match else None
+
+    def _extract_name_from_label(self, value: str) -> str | None:
+        """Extract the voter name from lines like 'Name : Rajkumar'."""
+        match = re.search(r'(?i)\bName\s*:\s*([^\n]+)', value or '')
+        if not match:
+            return None
+
+        name = match.group(1)
+        name = re.split(
+            r'(?i)\b(Father\s+Name|Husband\s+Name|Mother\s+Name|Wife\s+Name|House\s+Number|Age|Gender)\b',
+            name,
+            maxsplit=1
+        )[0]
+        return self._clean_name(name)
+
+    def _normalize_line(self, value: str) -> str:
+        """Normalize extracted PDF text for more reliable matching."""
+        return re.sub(r'\s+', ' ', (value or '').strip())
+
+    def _clean_name(self, value: str) -> str:
+        """Remove labels and trailing metadata from extracted names."""
+        cleaned = value or ''
+        cleaned = re.sub(r'(?i)\bName\s*:\s*', '', cleaned)
+        cleaned = re.sub(r'(?i)\b(ELECTOR PHOTO IDENTITY CARD|AVAILABLE)\b', ' ', cleaned)
+        cleaned = re.sub(r'[^A-Za-z.\s]', ' ', cleaned)
+        cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+        return cleaned
+
+    def _is_duplicate_voter(self, voter_id: str) -> bool:
+        return voter_id in self.seen_voter_ids
+
     def _extract_epic(self, value: str):
         """Return the first EPIC-style voter ID match from a string."""
         normalized = (value or '').strip().upper()
@@ -175,9 +290,10 @@ class VoterPDFParser:
         """Best-effort name extraction for text-based PDFs."""
         cleaned = line.replace(voter_id, ' ')
         cleaned = re.sub(r'(?i)\b(voter\s*id|epic|name|serial\s*no|house\s*no)\b', ' ', cleaned)
+        cleaned = re.sub(r'(?i)\b(father\s*name|husband\s*name|mother\s*name|wife\s*name|gender|age|part\s*no)\b.*', ' ', cleaned)
         cleaned = re.sub(r'[:;,.\-_/]+', ' ', cleaned)
         cleaned = re.sub(r'\s+', ' ', cleaned).strip()
-        return cleaned
+        return self._clean_name(cleaned)
 
     def _looks_like_label(self, value: str) -> bool:
         """Ignore common header or metadata cells when choosing the voter name."""
