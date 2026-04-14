@@ -1,2 +1,4 @@
-[[providers]]
-name = "python"
+providers = ["python"]
+
+[start]
+cmd = "cd backend && python app.py"
