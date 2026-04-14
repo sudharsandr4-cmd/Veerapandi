@@ -1,8 +1,2 @@
 [[providers]]
 name = "python"
-
-[build]
-cmds = ["pip install -r backend/requirements.txt"]
-
-[start]
-cmd = "cd backend && python app.py"
