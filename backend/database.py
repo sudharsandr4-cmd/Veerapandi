@@ -7,13 +7,13 @@ DB_DIR = os.path.dirname(os.path.abspath(__file__))
 DATABASE_PATH = os.path.join(DB_DIR, 'voters.db')
 
 def get_db():
-    """Get database connection"""
+    \"\"\"Get database connection\"\"\"
     conn = sqlite3.connect(DATABASE_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
 def init_db():
-    """Initialize database with tables"""
+    \"\"\"Initialize database with tables\"\"\"
     conn = get_db()
     cursor = conn.cursor()
     
@@ -35,6 +35,7 @@ def init_db():
             voter_name TEXT NOT NULL,
             booth_id INTEGER NOT NULL,
             booth_number TEXT NOT NULL,
+            phone_number TEXT,
             status TEXT DEFAULT 'not_visited',
             custom_notes TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -51,6 +52,9 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_voter_id ON voters(voter_id)
     ''')
     cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_phone_number ON voters(phone_number)
+    ''')
+    cursor.execute('''
         CREATE INDEX IF NOT EXISTS idx_booth_id ON voters(booth_id)
     ''')
     
@@ -58,7 +62,7 @@ def init_db():
     conn.close()
 
 def add_booth(booth_number, booth_name):
-    """Add a new booth to the database"""
+    \"\"\"Add a new booth to the database\"\"\"
     conn = get_db()
     cursor = conn.cursor()
     try:
@@ -78,10 +82,10 @@ def add_booth(booth_number, booth_name):
         cursor.execute('SELECT id FROM booths WHERE booth_number = ?', (booth_number,))
         result = cursor.fetchone()
         conn.close()
-        return result[0] if result else None
+        return result['id'] if result else None
 
 def add_voter(voter_id, voter_name, booth_number):
-    """Add a new voter to the database"""
+    \"\"\"Add a new voter to the database\"\"\"
     conn = get_db()
     cursor = conn.cursor()
     
@@ -93,7 +97,7 @@ def add_voter(voter_id, voter_name, booth_number):
         conn.close()
         return None
     
-    booth_id = booth_result[0]
+    booth_id = booth_result['id']
     
     try:
         cursor.execute(
@@ -110,7 +114,7 @@ def add_voter(voter_id, voter_name, booth_number):
         return None
 
 def get_all_booths():
-    """Get all booths"""
+    \"\"\"Get all booths\"\"\"
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute('SELECT id, booth_number, booth_name FROM booths ORDER BY booth_number')
@@ -119,11 +123,11 @@ def get_all_booths():
     return [dict(booth) for booth in booths]
 
 def get_voters_by_booth(booth_id):
-    """Get all voters in a booth"""
+    \"\"\"Get all voters in a booth\"\"\"
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute(
-        '''SELECT id, voter_id, voter_name, booth_number, status, custom_notes 
+        '''SELECT id, voter_id, voter_name, booth_number, phone_number, status, custom_notes 
            FROM voters WHERE booth_id = ? ORDER BY voter_name''',
         (booth_id,)
     )
@@ -132,61 +136,62 @@ def get_voters_by_booth(booth_id):
     return [dict(voter) for voter in voters]
 
 def search_voters(search_term, booth_id=None):
-    """Search voters by name or voter ID"""
+    \"\"\"Search voters by name or voter ID\"\"\"
     conn = get_db()
     cursor = conn.cursor()
     search_param = f'%{search_term}%'
     
     if booth_id:
         cursor.execute(
-            '''SELECT id, voter_id, voter_name, booth_number, status, custom_notes 
+            '''SELECT id, voter_id, voter_name, booth_number, phone_number, status, custom_notes 
                FROM voters 
-               WHERE booth_id = ? AND (voter_name LIKE ? OR voter_id LIKE ?)
+               WHERE booth_id = ? AND (voter_name LIKE ? OR voter_id LIKE ? OR phone_number LIKE ?)
                ORDER BY voter_name''',
-            (booth_id, search_param, search_param)
+            (booth_id, search_param, search_param, search_param)
         )
     else:
         cursor.execute(
-            '''SELECT id, voter_id, voter_name, booth_number, status, custom_notes 
+            '''SELECT id, voter_id, voter_name, booth_number, phone_number, status, custom_notes 
                FROM voters 
-               WHERE voter_name LIKE ? OR voter_id LIKE ?
+               WHERE voter_name LIKE ? OR voter_id LIKE ? OR phone_number LIKE ?
                ORDER BY voter_name''',
-            (search_param, search_param)
+            (search_param, search_param, search_param)
         )
     
     voters = cursor.fetchall()
     conn.close()
     return [dict(voter) for voter in voters]
 
-def update_voter(voter_id, status=None, custom_notes=None):
-    """Update voter information"""
+def update_voter(voter_id, status=None, phone_number=None, custom_notes=None):
+    \"\"\"Update voter information\"\"\"
     conn = get_db()
     cursor = conn.cursor()
     
-    if status and custom_notes:
-        cursor.execute(
-            '''UPDATE voters SET status = ?, custom_notes = ?, updated_at = CURRENT_TIMESTAMP 
-               WHERE id = ?''',
-            (status, custom_notes, voter_id)
-        )
-    elif status:
-        cursor.execute(
-            '''UPDATE voters SET status = ?, updated_at = CURRENT_TIMESTAMP 
-               WHERE id = ?''',
-            (status, voter_id)
-        )
-    elif custom_notes:
-        cursor.execute(
-            '''UPDATE voters SET custom_notes = ?, updated_at = CURRENT_TIMESTAMP 
-               WHERE id = ?''',
-            (custom_notes, voter_id)
-        )
+    updates = []
+    params = []
+    
+    if status is not None:
+        updates.append(\"status = ?\" )
+        params.append(status)
+    if phone_number is not None:
+        updates.append(\"phone_number = ?\" )
+        params.append(phone_number)
+    if custom_notes is not None:
+        updates.append(\"custom_notes = ?\" )
+        params.append(custom_notes)
+    
+    if updates:
+        updates.append(\"updated_at = CURRENT_TIMESTAMP\" )
+        params.append(voter_id)
+        set_clause = ', '.join(updates)
+        query = f'''UPDATE voters SET {set_clause} WHERE id = ?'''
+        cursor.execute(query, params)
     
     conn.commit()
     conn.close()
 
 def get_voter_stats(booth_id=None):
-    """Get statistics about voters"""
+    \"\"\"Get statistics about voters\"\"\"
     conn = get_db()
     cursor = conn.cursor()
     
@@ -209,10 +214,11 @@ def get_voter_stats(booth_id=None):
     return dict(result) if result else {'total': 0, 'visited': 0}
 
 def clear_all_data():
-    """Clear all data from database"""
+    \"\"\"Clear all data from database\"\"\"
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute('DELETE FROM voters')
     cursor.execute('DELETE FROM booths')
     conn.commit()
     conn.close()
+

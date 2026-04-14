@@ -137,11 +137,7 @@ body {
     margin-bottom: 0.3rem;
 }
 
-.voter-booth {
-    font-size: 0.85rem;
-    color: #6c757d;
-    margin-bottom: 0.5rem;
-}
+.voter-booth {\n    font-size: 0.85rem;\n    color: #6c757d;\n    margin-bottom: 0.3rem;\n}\n\n.voter-phone {\n    font-size: 0.85rem;\n    color: #28a745;\n    font-family: 'Courier New', monospace;\n    margin-bottom: 0.3rem;\n}\n\n#customFilename {\n    font-size: 0.9rem;\n}\n\n.form-select-sm {\n    font-size: 0.875rem;\n}
 
 .voter-status {
     display: inline-block;

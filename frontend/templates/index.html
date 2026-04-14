@@ -71,9 +71,7 @@
                             <p>Drag and drop PDF here or click to select</p>
                             <small class="text-muted">Maximum file size: 50MB</small>
                         </div>
-                        <input type="file" id="pdfInput" accept=".pdf" style="display: none;">
-                        
-                        <div id="uploadProgress" style="display: none;" class="mt-3">
+                        <input type="file" id="pdfInput" accept=".pdf" style="display: none;">\n                        <div class="mt-3">\n                            <label for="customFilename" class="form-label small">Custom PDF Filename (optional):</label>\n                            <input type="text" id="customFilename" class="form-control" placeholder="e.g. booth001.pdf">\n                        </div>\n                        <div id="uploadProgress" style="display: none;" class="mt-3">
                             <div class="progress">
                                 <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated" 
                                      role="progressbar" style="width: 0%"></div>
@@ -115,7 +113,7 @@
 
                         <!-- Search Box -->
                         <div class="mb-3">
-                            <label for="searchInput" class="form-label">Search by Name or Voter ID (EPIC):</label>
+                            <label for="searchInput" class="form-label">Search by Name, Voter ID (EPIC), or Phone:</label>
                             <div class="input-group">
                                 <input type="text" id="searchInput" class="form-control" 
                                        placeholder="Enter voter name or EPIC ID...">
@@ -131,14 +129,7 @@
                             </small>
                         </div>
 
-                        <!-- Results Count -->
-                        <div id="resultsInfo" style="display: none;">
-                            <p class="text-muted">
-                                Found <strong id="resultsCount">0</strong> voter(s)
-                            </p>
-                        </div>
-                    </div>
-                </div>
+                        <!-- Results Count -->\n                        <div id="resultsInfo" style="display: none;">\n                            <p class="text-muted">\n                                Found <strong id="resultsCount">0</strong> voter(s)\n                            </p>\n                        </div>\n                        <!-- Export Section -->\n                        <div class="mt-3">\n                            <label for="exportFilter" class="form-label small">Export:</label>\n                            <div class="input-group">\n                                <select id="exportFilter" class="form-select form-select-sm">\n                                    <option value="all">All Voters</option>\n                                    <option value="visited">Visited</option>\n                                    <option value="remaining">Remaining</option>\n                                </select>\n                                <select id="exportType" class="form-select form-select-sm">\n                                    <option value="csv">CSV</option>\n                                    <option value="excel">Excel</option>\n                                </select>\n                                <button class="btn btn-success" id="exportBtn">\n                                    <i class="bi bi-download"></i> Export\n                                </button>\n                            </div>\n                        </div>\n                    </div>\n                </div>
 
                 <!-- Voters List -->
                 <div class="card shadow-sm mt-4" id="votersCard" style="display: none;">
@@ -175,10 +166,7 @@
                     </div>
                     <div class="mb-3">
                         <label for="voterIdDisplay" class="form-label">Voter ID (EPIC):</label>
-                        <input type="text" id="voterIdDisplay" class="form-control" readonly>
-                    </div>
-                    <div class="mb-3">
-                        <label for="statusSelect" class="form-label">Status:</label>
+                        <input type="text" id="voterIdDisplay" class="form-control" readonly>\n                    </div>\n                    <div class="mb-3">\n                        <label for="phoneInput" class="form-label">Phone Number:</label>\n                        <input type="tel" id="phoneInput" class="form-control" placeholder="Enter/update phone number">\n                    </div>\n                    <div class="mb-3">\n                        <label for="statusSelect" class="form-label">Status:</label>
                         <select id="statusSelect" class="form-select">
                             <option value="not_visited">Not Visited</option>
                             <option value="visited">Visited</option>
