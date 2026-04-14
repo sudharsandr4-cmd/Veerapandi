@@ -10,10 +10,14 @@ from database import (
 from pdf_parser import extract_voters_from_pdf
 
 app = Flask(__name__, template_folder='../frontend/templates', static_folder='../frontend/static')
-CORS(app)
+CORS(app, resources={
+    r"/api/*": {
+        "origins": ["*"]
+    }
+})
 
 # Configuration
-UPLOAD_FOLDER = '../uploads'
+UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../uploads')
 ALLOWED_EXTENSIONS = {'pdf'}
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 
@@ -240,5 +244,7 @@ def internal_error(error):
 
 if __name__ == '__main__':
     print("Starting Voter Data Management System...")
-    print("Backend running at http://localhost:5000")
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    port = int(os.environ.get('PORT', 5000))
+    debug = os.environ.get('FLASK_ENV') == 'development'
+    print(f"Backend running at http://0.0.0.0:{port}")
+    app.run(debug=debug, host='0.0.0.0', port=port)

@@ -2,7 +2,9 @@ import sqlite3
 import os
 from datetime import datetime
 
-DATABASE_PATH = 'voters.db'
+# Use absolute path for database to ensure it works in Railway
+DB_DIR = os.path.dirname(os.path.abspath(__file__))
+DATABASE_PATH = os.path.join(DB_DIR, 'voters.db')
 
 def get_db():
     """Get database connection"""
