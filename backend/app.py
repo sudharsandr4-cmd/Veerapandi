@@ -1,9 +1,11 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_file
 from flask_cors import CORS
 import os
 import tempfile
 import traceback
 import uuid
+import pandas as pd
+from io import BytesIO
 from werkzeug.utils import secure_filename
 from database import (
     init_db, add_booth, add_voter, get_all_booths, 
@@ -103,12 +105,74 @@ def search():
 def update_voter_info(voter_id):
     """Update voter information"""
     try:
-        data = request.get_json()\n        status = data.get('status')\n        phone_number = data.get('phone_number')\n        custom_notes = data.get('custom_notes')\n        \n        if not any([status, phone_number, custom_notes]):\n            return jsonify({\n                'status': 'error',\n                'message': 'At least one field must be provided'\n            }), 400\n        \n        update_voter(voter_id, status, phone_number, custom_notes)
+        data = request.get_json()
+        status = data.get('status')
+        phone_number = data.get('phone_number')
+        custom_notes = data.get('custom_notes')
+        
+        if not any([status, phone_number, custom_notes]):
+            return jsonify({
+                'status': 'error',
+                'message': 'At least one field must be provided'
+            }), 400
+        
+        update_voter(voter_id, status, phone_number, custom_notes)
         
         return jsonify({
             'status': 'success',
             'message': 'Voter updated successfully'
         })
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/export', methods=['GET'])
+def export_voters():
+    """Export voters to CSV or Excel"""
+    try:
+        export_type = request.args.get('type', 'csv').lower()
+        filter_status = request.args.get('filter', 'all').lower()
+        
+        if export_type not in ['csv', 'excel']:
+            return jsonify({'status': 'error', 'message': 'Type must be csv or excel'}), 400
+        
+        # Get all voters
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        if filter_status == 'visited':
+            status_condition = "WHERE status = 'visited'"
+        elif filter_status == 'remaining':
+            status_condition = "WHERE status != 'visited' OR status IS NULL"
+        else:
+            status_condition = ""
+        
+        cursor.execute(f'''
+            SELECT voter_name, voter_id, booth_number, phone_number, status, custom_notes 
+            FROM voters {status_condition}
+            ORDER BY booth_number, voter_name
+        ''')
+        voters = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        
+        if not voters:
+            return jsonify({'status': 'error', 'message': 'No voters found'}), 404
+        
+        df = pd.DataFrame(voters)
+        
+        if export_type == 'csv':
+            output = BytesIO()
+            df.to_csv(output, index=False)
+            output.seek(0)
+            return send_file(output, mimetype='text/csv', as_attachment=True, 
+                           download_name=f'voters_{filter_status}.csv')
+        else:
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                df.to_excel(writer, index=False, sheet_name='Voters')
+            output.seek(0)
+            return send_file(output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 
+                           as_attachment=True, download_name=f'voters_{filter_status}.xlsx')
+    
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
@@ -138,11 +202,19 @@ def upload_pdf():
                 'message': 'Only PDF files are allowed'
             }), 400
         
-        # Save uploaded file
-        original_name = secure_filename(file.filename)
-        filename = f"{uuid.uuid4().hex}_{original_name}"
+        # Get custom filename if provided
+        custom_filename = request.form.get('custom_filename', '').strip()
+        if custom_filename:
+            _, ext = os.path.splitext(file.filename)
+            if not ext:
+                ext = '.pdf'
+            filename = secure_filename(custom_filename + ext)
+        else:
+            original_name = secure_filename(file.filename)
+            filename = f"{uuid.uuid4().hex}_{original_name}"
+        
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        print(f"Receiving upload: {original_name} -> {filepath}")
+        print(f"Receiving upload: {file.filename} -> {filepath}")
         file.save(filepath)
         file_size = os.path.getsize(filepath)
         print(f"Saved upload ({file_size} bytes). Starting parse...")
@@ -179,7 +251,7 @@ def upload_pdf():
         
         return jsonify({
             'status': 'success',
-            'message': f'Successfully added {added_voters} voters',
+            'message': f'Successfully added {added_voters} voters (filename: {filename})',
             'added_voters': added_voters,
             'skipped_voters': skipped_voters,
             'total_booths': len(booths)
