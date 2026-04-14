@@ -70,9 +70,38 @@ function setupUploadArea() {
 }
 
 // ==================== FILE UPLOAD ====================
-function handleFileSelect(file) {\n    if (file.type !== 'application/pdf') {\n        showToast('Error', 'Please select a PDF file', 'danger');\n        return;\n    }\n\n    if (file.size > 50 * 1024 * 1024) {\n        showToast('Error', 'File size exceeds 50MB limit', 'danger');\n        return;\n    }\n\n    uploadPDF(file);\n}\n\ndocument.getElementById('exportBtn').addEventListener('click', exportData);
+function handleFileSelect(file) {
+    if (file.type !== 'application/pdf') {
+        showToast('Error', 'Please select a PDF file', 'danger');
+        return;
+    }
 
-function uploadPDF(file) {\n    const formData = new FormData();\n    formData.append('pdf_file', file);\n    const customFilename = document.getElementById('customFilename').value.trim();\n    if (customFilename) {\n        formData.append('custom_filename', customFilename);\n    }\n\n    document.getElementById('uploadProgress').style.display = 'block';\n    document.getElementById('uploadResult').style.display = 'none';\n    document.getElementById('progressBar').style.width = '0%';\n\n    fetch(`${API_BASE}/upload-pdf`, {\n        method: 'POST',\n        body: formData\n    })
+    if (file.size > 50 * 1024 * 1024) {
+        showToast('Error', 'File size exceeds 50MB limit', 'danger');
+        return;
+    }
+
+    uploadPDF(file);
+}
+
+document.getElementById('exportBtn')?.addEventListener('click', exportData);
+
+function uploadPDF(file) {
+    const formData = new FormData();
+    formData.append('pdf_file', file);
+    const customFilename = document.getElementById('customFilename') ? document.getElementById('customFilename').value.trim() : '';
+    if (customFilename) {
+        formData.append('custom_filename', customFilename);
+    }
+
+    document.getElementById('uploadProgress').style.display = 'block';
+    document.getElementById('uploadResult').style.display = 'none';
+    document.getElementById('progressBar').style.width = '0%';
+
+    fetch(`${API_BASE}/upload-pdf`, {
+        method: 'POST',
+        body: formData
+    })
         .then(async response => {
             updateProgress(100);
 
@@ -256,9 +285,39 @@ function clearSearch() {
 }
 
 // ==================== VOTER UPDATES ====================
-function openUpdateModal(voterId, voterName, voterId_epic, phoneNumber = '') {\n    currentVoterId = voterId;\n    document.getElementById('voterNameDisplay').value = voterName;\n    document.getElementById('voterIdDisplay').value = voterId_epic;\n    document.getElementById('phoneInput').value = phoneNumber;\n    document.getElementById('statusSelect').value = 'not_visited';\n    document.getElementById('notesInput').value = '';\n\n    const modal = new bootstrap.Modal(document.getElementById('updateModal'));\n    modal.show();\n}
+function openUpdateModal(voterId, voterName, voterId_epic, phoneNumber = '') {
+    currentVoterId = voterId;
+    document.getElementById('voterNameDisplay').value = voterName;
+    document.getElementById('voterIdDisplay').value = voterId_epic;
+    document.getElementById('phoneInput').value = phoneNumber;
+    document.getElementById('statusSelect').value = 'not_visited';
+    document.getElementById('notesInput').value = '';
 
-function saveVoterUpdate() {\n    const phone = document.getElementById('phoneInput').value.trim();\n    const status = document.getElementById('statusSelect').value;\n    const notes = document.getElementById('notesInput').value.trim();\n\n    if (!status && !phone && !notes) {\n        showToast('Warning', 'Please provide at least one field to update', 'warning');\n        return;\n    }\n\n    const payload = {};\n    if (phone) payload.phone_number = phone;\n    if (status) payload.status = status;\n    if (notes) payload.custom_notes = notes;\n\n    fetch(`${API_BASE}/voter/${currentVoterId}`, {\n        method: 'PUT',\n        headers: {\n            'Content-Type': 'application/json'\n        },\n        body: JSON.stringify(payload)
+    const modal = new bootstrap.Modal(document.getElementById('updateModal'));
+    modal.show();
+}
+
+function saveVoterUpdate() {
+    const phone = document.getElementById('phoneInput').value.trim();
+    const status = document.getElementById('statusSelect').value;
+    const notes = document.getElementById('notesInput').value.trim();
+
+    if (!status && !phone && !notes) {
+        showToast('Warning', 'Please provide at least one field to update', 'warning');
+        return;
+    }
+
+    const payload = {};
+    if (phone) payload.phone_number = phone;
+    if (status) payload.status = status;
+    if (notes) payload.custom_notes = notes;
+
+    fetch(`${API_BASE}/voter/${currentVoterId}`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
     })
         .then(response => response.json())
         .then(data => {
