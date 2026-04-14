@@ -4,7 +4,7 @@ let allBooths = [];
 let toastInstance = null;
 
 // ==================== API ENDPOINTS ====================
-const API_BASE = 'http://localhost:5000/api';
+const API_BASE = 'https://veerapandi-production.up.railway.app/api';
 
 // ==================== INITIALIZATION ====================
 document.addEventListener('DOMContentLoaded', function() {
