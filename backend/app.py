@@ -247,7 +247,7 @@ def internal_error(error):
 
 if __name__ == '__main__':
     print("Starting Voter Data Management System...")
-    port = int(os.environ.get('PORT', 5000))
+    port = int(os.environ.get('PORT', 8080))
     debug = os.environ.get('FLASK_ENV') == 'development'
     print(f"Backend running at http://0.0.0.0:{port}")
     app.run(debug=debug, host='0.0.0.0', port=port)
