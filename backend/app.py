@@ -103,17 +103,7 @@ def search():
 def update_voter_info(voter_id):
     """Update voter information"""
     try:
-        data = request.get_json()
-        status = data.get('status')
-        custom_notes = data.get('custom_notes')
-        
-        if not status and not custom_notes:
-            return jsonify({
-                'status': 'error',
-                'message': 'At least one field must be provided'
-            }), 400
-        
-        update_voter(voter_id, status, custom_notes)
+        data = request.get_json()\n        status = data.get('status')\n        phone_number = data.get('phone_number')\n        custom_notes = data.get('custom_notes')\n        \n        if not any([status, phone_number, custom_notes]):\n            return jsonify({\n                'status': 'error',\n                'message': 'At least one field must be provided'\n            }), 400\n        \n        update_voter(voter_id, status, phone_number, custom_notes)
         
         return jsonify({
             'status': 'success',
