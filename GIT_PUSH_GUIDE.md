@@ -26,8 +26,7 @@ To push your code to a remote repository (GitHub, GitLab, etc.), follow the step
 #### Step 2: Add Remote and Push
 
 ```bash
-# Replace USERNAME and REPO with your details
-git remote add origin https://github.com/USERNAME/REPO.git
+git remote add origin https://github.com/sudharsandr4-cmd/Veerapandi.git
 git branch -M main
 git push -u origin main
 ```

@@ -10,7 +10,7 @@ from werkzeug.utils import secure_filename
 from database import (
     init_db, add_booth, add_voter, get_all_booths, 
     get_voters_by_booth, search_voters, update_voter, 
-    get_voter_stats, clear_all_data, get_db
+    get_voter_stats, clear_all_data
 )
 from pdf_parser import extract_voters_from_pdf
 

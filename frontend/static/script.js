@@ -86,6 +86,19 @@ function handleFileSelect(file) {
 
 document.getElementById('exportBtn')?.addEventListener('click', exportData);
 
+function exportData() {
+    // Prompt user to choose between CSV and Excel format
+    const format = confirm('Click OK to export as CSV, or Cancel to export as Excel.') ? 'csv' : 'excel';
+    const url = `${API_BASE}/export?type=${format}&filter=all`;
+    
+    const a = document.createElement('a');
+    a.href = url;
+    a.target = '_blank';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+}
+
 function uploadPDF(file) {
     const formData = new FormData();
     formData.append('pdf_file', file);
