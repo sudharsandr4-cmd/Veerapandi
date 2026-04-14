@@ -1,5 +1,10 @@
 {
-  "root": ".",
-  "buildCommand": "pip install -r backend/requirements.txt",
-  "startCommand": "cd backend && python app.py"
+  "$schema": "https://railway.app/railway.schema.json",
+  "build": {
+    "builder": "nixpacks"
+  },
+  "deploy": {
+    "startCommand": "cd backend && python app.py",
+    "restartPolicyMaxRetries": 5
+  }
 }
