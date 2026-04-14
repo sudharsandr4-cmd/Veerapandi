@@ -1,6 +1,9 @@
 from flask import Flask, render_template, request, jsonify
 from flask_cors import CORS
 import os
+import tempfile
+import traceback
+import uuid
 from werkzeug.utils import secure_filename
 from database import (
     init_db, add_booth, add_voter, get_all_booths, 
@@ -20,12 +23,12 @@ CORS(app, resources={
 })
 
 # Configuration
-UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../uploads')
+DEFAULT_UPLOAD_DIR = os.path.join(tempfile.gettempdir(), 'voter-management-uploads')
+UPLOAD_FOLDER = os.environ.get('UPLOAD_FOLDER', DEFAULT_UPLOAD_DIR)
 ALLOWED_EXTENSIONS = {'pdf'}
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 
-if not os.path.exists(UPLOAD_FOLDER):
-    os.makedirs(UPLOAD_FOLDER)
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = MAX_FILE_SIZE
@@ -122,6 +125,7 @@ def update_voter_info(voter_id):
 @app.route('/api/upload-pdf', methods=['POST'])
 def upload_pdf():
     """Upload and parse voter list PDF"""
+    filepath = None
     try:
         # Check if file is present
         if 'pdf_file' not in request.files:
@@ -145,12 +149,17 @@ def upload_pdf():
             }), 400
         
         # Save uploaded file
-        filename = secure_filename(file.filename)
+        original_name = secure_filename(file.filename)
+        filename = f"{uuid.uuid4().hex}_{original_name}"
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        print(f"Receiving upload: {original_name} -> {filepath}")
         file.save(filepath)
+        file_size = os.path.getsize(filepath)
+        print(f"Saved upload ({file_size} bytes). Starting parse...")
         
         # Parse PDF
         voters, booths = extract_voters_from_pdf(filepath)
+        print(f"Parse finished. Extracted {len(voters)} voters across {len(booths)} booths.")
         
         if not voters:
             os.remove(filepath)
@@ -175,7 +184,8 @@ def upload_pdf():
                 skipped_voters += 1
         
         # Clean up uploaded file after processing
-        os.remove(filepath)
+        if os.path.exists(filepath):
+            os.remove(filepath)
         
         return jsonify({
             'status': 'success',
@@ -186,10 +196,18 @@ def upload_pdf():
         })
     
     except Exception as e:
+        print("Error processing PDF upload:")
+        print(traceback.format_exc())
         return jsonify({
             'status': 'error',
             'message': f'Error processing PDF: {str(e)}'
         }), 500
+    finally:
+        if filepath and os.path.exists(filepath):
+            try:
+                os.remove(filepath)
+            except OSError:
+                pass
 
 @app.route('/api/stats', methods=['GET'])
 def get_stats():
@@ -250,4 +268,5 @@ if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
     debug = os.environ.get('FLASK_ENV') == 'development'
     print(f"Backend running at http://0.0.0.0:{port}")
+    print(f"Temporary upload folder: {app.config['UPLOAD_FOLDER']}")
     app.run(debug=debug, host='0.0.0.0', port=port)

@@ -1,4 +1,4 @@
 providers = ["python"]
 
 [start]
-cmd = "python backend/app.py"
+cmd = "gunicorn --chdir backend --bind 0.0.0.0:$PORT --timeout 900 app:app"

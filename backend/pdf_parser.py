@@ -2,6 +2,11 @@ import pdfplumber
 import re
 from typing import List, Dict, Tuple
 
+EPIC_PATTERNS = (
+    re.compile(r'\b[A-Z]{3}\d{7}\b'),
+    re.compile(r'\b[A-Z]{2}\d{2}[A-Z0-9]{7}\b'),
+)
+
 class VoterPDFParser:
     """Parser for voter list PDFs"""
     
@@ -18,7 +23,10 @@ class VoterPDFParser:
         try:
             with pdfplumber.open(self.pdf_path) as pdf:
                 for page in pdf.pages:
-                    self._parse_page(page)
+                    try:
+                        self._parse_page(page)
+                    except Exception as page_error:
+                        print(f"Skipping page {page.page_number}: {page_error}")
             return self.voters, self.booths
         except Exception as e:
             print(f"Error parsing PDF: {e}")
@@ -26,17 +34,21 @@ class VoterPDFParser:
     
     def _parse_page(self, page):
         """Parse individual page from PDF"""
-        # First, try to extract tables
-        tables = page.extract_tables()
-        
-        if tables:
-            for table in tables:
-                self._parse_table(table)
-        else:
-            # Fallback to text extraction if no tables found
-            text = page.extract_text()
-            if text:
-                self._parse_text(text)
+        # Text extraction is much cheaper than table extraction and works for
+        # most voter-roll PDFs. We only fall back to table extraction when text
+        # extraction produced nothing on the current page.
+        text = page.extract_text() or ''
+        voters_before = len(self.voters)
+
+        if text:
+            self._parse_text(text)
+
+        if len(self.voters) > voters_before:
+            return
+
+        tables = page.extract_tables() or []
+        for table in tables:
+            self._parse_table(table)
     
     def _parse_table(self, table):
         """Parse table structure from PDF"""
@@ -65,31 +77,26 @@ class VoterPDFParser:
             # Look for booth information (common patterns)
             if 'booth' in line.lower() or 'polling' in line.lower():
                 # Try to extract booth number
-                booth_match = re.search(r'[Bb]ooth\s*[:\-]?\s*(\d+)', line)
+                booth_match = re.search(r'(?:[Bb]ooth|[Pp]olling(?:\s+[Ss]tation)?)\s*(?:[Nn]o\.?|[:\-])?\s*(\d+)', line)
                 if booth_match:
                     current_booth = booth_match.group(1)
             
-            # Look for voter ID (EPIC number - typically alphanumeric)
-            # Pattern: starts with state code (2 letters) + district + numbers
-            epic_match = re.search(r'([A-Z]{2})\d{2}[A-Z0-9]{7}', line)
+            epic_match = self._extract_epic(line)
             
             if epic_match and current_booth:
                 voter_id = epic_match.group(0)
                 
-                # Extract voter name (usually comes before or after EPIC)
-                name_match = re.search(r'([A-Za-z\s]+)', line)
-                if name_match:
-                    voter_name = name_match.group(1).strip()
-                    
-                    voter_info = {
-                        'voter_name': voter_name,
-                        'voter_id': voter_id,
-                        'booth_number': current_booth
-                    }
-                    
-                    if self._is_valid_voter(voter_info):
-                        self.voters.append(voter_info)
-                        self.booths.add(current_booth)
+                voter_name = self._extract_name_from_text_line(line, voter_id)
+
+                voter_info = {
+                    'voter_name': voter_name,
+                    'voter_id': voter_id,
+                    'booth_number': current_booth
+                }
+
+                if self._is_valid_voter(voter_info):
+                    self.voters.append(voter_info)
+                    self.booths.add(current_booth)
     
     def _extract_voter_from_row(self, row) -> Dict or None:
         """Extract voter information from a table row"""
@@ -113,11 +120,12 @@ class VoterPDFParser:
                         voter_info['booth_number'] = cell
                 
                 # Check if cell looks like a voter ID (EPIC format)
-                if re.match(r'^[A-Z]{2}\d{2}[A-Z0-9]{7}', cell):
-                    voter_info['voter_id'] = cell
+                epic_match = self._extract_epic(cell)
+                if epic_match:
+                    voter_info['voter_id'] = epic_match.group(0)
                 
                 # Check if cell contains alphabetic characters (likely name)
-                if re.search(r'[A-Za-z]{3,}', cell):
+                if re.search(r'[A-Za-z]{3,}', cell) and not self._looks_like_label(cell):
                     if 'voter_name' not in voter_info or len(cell) > len(voter_info.get('voter_name', '')):
                         voter_info['voter_name'] = cell
             
@@ -141,7 +149,7 @@ class VoterPDFParser:
         
         # Validate voter ID format (EPIC number)
         voter_id = voter_info['voter_id']
-        if not re.match(r'^[A-Z]{2}\d{2}[A-Z0-9]{7}$', voter_id):
+        if not self._extract_epic(voter_id):
             return False
         
         # Validate name (at least 2 characters)
@@ -153,6 +161,38 @@ class VoterPDFParser:
             return False
         
         return True
+
+    def _extract_epic(self, value: str):
+        """Return the first EPIC-style voter ID match from a string."""
+        normalized = (value or '').strip().upper()
+        for pattern in EPIC_PATTERNS:
+            match = pattern.search(normalized)
+            if match:
+                return match
+        return None
+
+    def _extract_name_from_text_line(self, line: str, voter_id: str) -> str:
+        """Best-effort name extraction for text-based PDFs."""
+        cleaned = line.replace(voter_id, ' ')
+        cleaned = re.sub(r'(?i)\b(voter\s*id|epic|name|serial\s*no|house\s*no)\b', ' ', cleaned)
+        cleaned = re.sub(r'[:;,.\-_/]+', ' ', cleaned)
+        cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+        return cleaned
+
+    def _looks_like_label(self, value: str) -> bool:
+        """Ignore common header or metadata cells when choosing the voter name."""
+        normalized = value.strip().lower()
+        return normalized in {
+            'booth',
+            'booth number',
+            'booth no',
+            'voter id',
+            'epic',
+            'epic number',
+            'name',
+            'serial no',
+            'part no',
+        }
 
 def extract_voters_from_pdf(pdf_path: str) -> Tuple[List[Dict], set]:
     """

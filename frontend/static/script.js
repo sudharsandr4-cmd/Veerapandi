@@ -4,7 +4,7 @@ let allBooths = [];
 let toastInstance = null;
 
 // ==================== API ENDPOINTS ====================
-const API_BASE = 'https://veerapandi-production.up.railway.app/api';
+const API_BASE = `${window.location.origin}/api`;
 
 // ==================== INITIALIZATION ====================
 document.addEventListener('DOMContentLoaded', function() {
@@ -88,7 +88,6 @@ function uploadPDF(file) {
     const formData = new FormData();
     formData.append('pdf_file', file);
 
-    // Show progress
     document.getElementById('uploadProgress').style.display = 'block';
     document.getElementById('uploadResult').style.display = 'none';
     document.getElementById('progressBar').style.width = '0%';
@@ -97,36 +96,50 @@ function uploadPDF(file) {
         method: 'POST',
         body: formData
     })
-    .then(response => {
-        // Simulate progress
-        updateProgress(100);
-        return response.json();
-    })
-    .then(data => {
-        document.getElementById('uploadProgress').style.display = 'none';
+        .then(async response => {
+            updateProgress(100);
 
-        if (data.status === 'success') {
-            showUploadResult(true, `✓ Successfully uploaded!
+            const contentType = response.headers.get('content-type') || '';
+            const isJson = contentType.includes('application/json');
+            const data = isJson
+                ? await response.json()
+                : { status: 'error', message: `Upload failed with HTTP ${response.status}` };
+
+            if (!response.ok) {
+                throw new Error(data.message || `Upload failed with HTTP ${response.status}`);
+            }
+
+            return data;
+        })
+        .then(data => {
+            document.getElementById('uploadProgress').style.display = 'none';
+
+            if (data.status === 'success') {
+                showUploadResult(true, `Successfully uploaded!
                 Added: ${data.added_voters} voters
                 Booths: ${data.total_booths}
                 Skipped: ${data.skipped_voters}`);
-            showToast('Success', data.message, 'success');
-            
-            // Reload data
-            setTimeout(() => {
-                loadBooths();
-                loadStats();
-            }, 500);
-        } else {
-            showUploadResult(false, `✗ Upload failed: ${data.message}`);
-            showToast('Error', data.message, 'danger');
-        }
-    })
-    .catch(error => {
-        document.getElementById('uploadProgress').style.display = 'none';
-        showUploadResult(false, `✗ Upload error: ${error.message}`);
-        showToast('Error', 'Upload failed. Please try again.', 'danger');
-    });
+                showToast('Success', data.message, 'success');
+
+                setTimeout(() => {
+                    loadBooths();
+                    loadStats();
+                }, 500);
+            } else {
+                showUploadResult(false, `Upload failed: ${data.message}`);
+                showToast('Error', data.message, 'danger');
+            }
+        })
+        .catch(error => {
+            document.getElementById('uploadProgress').style.display = 'none';
+
+            const message = error.message === 'Failed to fetch'
+                ? 'Network error while uploading. Check the deployed backend logs for the request failure.'
+                : error.message;
+
+            showUploadResult(false, `Upload error: ${message}`);
+            showToast('Error', message, 'danger');
+        });
 }
 
 function updateProgress(percent) {
@@ -158,12 +171,10 @@ function populateBoothSelect() {
     const select = document.getElementById('boothSelect');
     const currentValue = select.value;
 
-    // Clear existing options except the first one
     while (select.options.length > 1) {
         select.remove(1);
     }
 
-    // Add booth options
     allBooths.forEach(booth => {
         const option = document.createElement('option');
         option.value = booth.id;
@@ -171,7 +182,6 @@ function populateBoothSelect() {
         select.appendChild(option);
     });
 
-    // Restore previous selection if it still exists
     if (currentValue && select.querySelector(`option[value="${currentValue}"]`)) {
         select.value = currentValue;
     }
@@ -236,10 +246,10 @@ function displaySearchResults(voters) {
 function createVoterElement(voter) {
     const div = document.createElement('div');
     div.className = 'voter-item';
-    
+
     const statusBadge = voter.status || 'not_visited';
-    const statusDisplay = statusBadge.replace('_', ' ').charAt(0).toUpperCase() + 
-                         statusBadge.replace('_', ' ').slice(1);
+    const statusDisplay = statusBadge.replace('_', ' ').charAt(0).toUpperCase() +
+        statusBadge.replace('_', ' ').slice(1);
 
     div.innerHTML = `
         <div class="voter-name">${voter.voter_name}</div>
@@ -299,23 +309,22 @@ function saveVoterUpdate() {
             custom_notes: notes
         })
     })
-    .then(response => response.json())
-    .then(data => {
-        if (data.status === 'success') {
-            showToast('Success', 'Voter updated successfully', 'success');
-            bootstrap.Modal.getInstance(document.getElementById('updateModal')).hide();
-            
-            // Refresh search results
-            performSearch();
-            loadStats();
-        } else {
-            showToast('Error', data.message, 'danger');
-        }
-    })
-    .catch(error => {
-        console.error('Error updating voter:', error);
-        showToast('Error', 'Failed to update voter', 'danger');
-    });
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                showToast('Success', 'Voter updated successfully', 'success');
+                bootstrap.Modal.getInstance(document.getElementById('updateModal')).hide();
+
+                performSearch();
+                loadStats();
+            } else {
+                showToast('Error', data.message, 'danger');
+            }
+        })
+        .catch(error => {
+            console.error('Error updating voter:', error);
+            showToast('Error', 'Failed to update voter', 'danger');
+        });
 }
 
 function markAsVisited(voterId) {
@@ -328,15 +337,15 @@ function markAsVisited(voterId) {
             status: 'visited'
         })
     })
-    .then(response => response.json())
-    .then(data => {
-        if (data.status === 'success') {
-            showToast('Success', 'Marked as visited', 'success');
-            performSearch();
-            loadStats();
-        }
-    })
-    .catch(error => console.error('Error:', error));
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                showToast('Success', 'Marked as visited', 'success');
+                performSearch();
+                loadStats();
+            }
+        })
+        .catch(error => console.error('Error:', error));
 }
 
 // ==================== STATISTICS ====================
@@ -347,7 +356,7 @@ function loadStats() {
             if (data.status === 'success') {
                 document.getElementById('totalVoters').textContent = data.total_voters || 0;
                 document.getElementById('visitedVoters').textContent = data.visited_voters || 0;
-                document.getElementById('remainingVoters').textContent = 
+                document.getElementById('remainingVoters').textContent =
                     (data.total_voters || 0) - (data.visited_voters || 0);
                 document.getElementById('totalBooths').textContent = data.total_booths || 0;
 
@@ -370,21 +379,21 @@ function clearAllData() {
     fetch(`${API_BASE}/clear-data`, {
         method: 'POST'
     })
-    .then(response => response.json())
-    .then(data => {
-        if (data.status === 'success') {
-            showToast('Success', 'All data cleared', 'success');
-            document.getElementById('votersContainer').innerHTML = '';
-            document.getElementById('votersCard').style.display = 'none';
-            clearSearch();
-            loadBooths();
-            loadStats();
-        }
-    })
-    .catch(error => {
-        console.error('Error clearing data:', error);
-        showToast('Error', 'Failed to clear data', 'danger');
-    });
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                showToast('Success', 'All data cleared', 'success');
+                document.getElementById('votersContainer').innerHTML = '';
+                document.getElementById('votersCard').style.display = 'none';
+                clearSearch();
+                loadBooths();
+                loadStats();
+            }
+        })
+        .catch(error => {
+            console.error('Error clearing data:', error);
+            showToast('Error', 'Failed to clear data', 'danger');
+        });
 }
 
 // ==================== TOAST NOTIFICATIONS ====================
@@ -396,7 +405,6 @@ function showToast(title, message, type = 'info') {
     toastTitle.textContent = title;
     toastBody.textContent = message;
 
-    // Update toast style based on type
     toast.className = 'toast';
     if (type === 'success') {
         toast.style.backgroundColor = '#d1e7dd';

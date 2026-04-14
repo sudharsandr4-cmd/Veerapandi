@@ -1,1 +1,1 @@
-web: cd backend && python app.py
+web: gunicorn --chdir backend --bind 0.0.0.0:$PORT --timeout 900 app:app
