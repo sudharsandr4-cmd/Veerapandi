@@ -59,7 +59,8 @@
             <!-- Upload Section -->
             <div class="col-md-4">
                 <div class="card shadow-sm mb-4">
-                    <div class="card-header bg-success text-white">\n                        <h5 class="mb-0"><i class="bi bi-file-earmark-spreadsheet"></i> Upload Voter List</h5>
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0"><i class="bi bi-file-earmark-spreadsheet"></i> Upload Voter List</h5>
                     </div>
                     <div class="card-body">
                         <div id="uploadArea" class="upload-area">
@@ -67,7 +68,8 @@
                             <p>Drag & drop Excel/CSV here or click to select</p>
                             <small class="text-muted">Accepts .xlsx, .csv files. Filename must be e.g., 'booth-123.xlsx'</small>
                         </div>
-                        <input type="file" id="fileInput" accept=".xlsx,.csv" style="display: none;">\n                        <div id="uploadProgress" style="display: none;" class="mt-3">
+                        <input type="file" id="fileInput" accept=".xlsx,.csv" style="display: none;">
+                        <div id="uploadProgress" style="display: none;" class="mt-3">
                             <div class="progress">
                                 <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated" 
                                      role="progressbar" style="width: 0%"></div>
@@ -125,7 +127,27 @@
                             </small>
                         </div>
 
-                        <!-- Results Count -->\n                        <div id="resultsInfo" style="display: none;">\n                            <p class="text-muted">\n                                Found <strong id="resultsCount">0</strong> voter(s)\n                            </p>\n                        </div>\n                        <!-- Export Section -->\n                        <div class="mt-3">\n                            <label for="exportFilter" class="form-label small">Export:</label>\n                            <div class="input-group">\n                                <select id="exportFilter" class="form-select form-select-sm">\n                                    <option value="all">All Voters</option>\n                                    <option value="visited">Visited</option>\n                                    <option value="remaining">Remaining</option>\n                                </select>\n                                <select id="exportType" class="form-select form-select-sm">\n                                    <option value="csv">CSV</option>\n                                    <option value="excel">Excel</option>\n                                </select>\n                                <button class="btn btn-success" id="exportBtn">\n                                    <i class="bi bi-download"></i> Export\n                                </button>\n                            </div>\n                        </div>\n                    </div>\n                </div>
+                        <!-- Results Count -->
+                        <div id="resultsInfo" style="display: none;">
+                            <p class="text-muted">
+                                Found <strong id="resultsCount">0</strong> voter(s)
+                            </p>
+                        </div>
+                        
+                        <!-- Export Section -->
+                        <div class="mt-3">
+                            <label class="form-label small">Export All Data:</label>
+                            <div class="btn-group w-100">
+                                <button class="btn btn-success" id="exportCsvBtn">
+                                    <i class="bi bi-download"></i> Export as CSV
+                                </button>
+                                <button class="btn btn-success" id="exportXlsxBtn">
+                                    <i class="bi bi-download"></i> Export as Excel
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
                 <!-- Voters List -->
                 <div class="card shadow-sm mt-4" id="votersCard" style="display: none;">
