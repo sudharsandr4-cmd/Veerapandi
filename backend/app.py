@@ -98,6 +98,18 @@ def create_user_command(username, password):
     add_user(username, password)
     print(f'User {username} created successfully.')
 
+@app.cli.command('create-veera-users')
+def create_veera_users_command():
+    """Creates 20 standard user accounts for Veerapandi."""
+    print("Starting bulk creation of 20 users...")
+    for i in range(1, 21):
+        username = f'adminveera{i}'
+        # Creates passwords like veerapandi911, veerapandi912, ... veerapandi930
+        password = f'veerapandi{910 + i}'
+        add_user(username, password)
+        print(f" -> Created user: {username}")
+    print("\nBulk user creation complete.")
+
 # ==================== PAGE ROUTES ====================
 
 @app.route('/')
