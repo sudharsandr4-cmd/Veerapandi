@@ -262,23 +262,24 @@ function createVoterElement(voter) {
     const statusDisplay = statusBadge.replace('_', ' ').charAt(0).toUpperCase() +
                          statusBadge.replace('_', ' ').slice(1);
 
-    // Prepare optional fields
+    const houseNumberDisplay = voter.house_number ?
+        `<div class="voter-house"><strong>House No:</strong> ${voter.house_number}</div>` : '';
     const phoneDisplay = voter.phone_number ?
         `<div class="voter-phone"><strong>Phone:</strong> ${voter.phone_number}</div>` : '';
     
     const notesDisplay = voter.custom_notes ? 
         `<div class="voter-notes"><strong>Notes:</strong> ${voter.custom_notes}</div>` : '';
 
-    // Set the inner HTML
     div.innerHTML = `
         <div class="voter-name">${voter.voter_name}</div>
         <div class="voter-id"><strong>ID:</strong> ${voter.voter_id}</div>
+        ${houseNumberDisplay}
         <div class="voter-booth"><strong>Booth:</strong> ${voter.booth_number}</div>
         ${phoneDisplay}
         <span class="voter-status ${statusBadge}">${statusDisplay}</span>
         ${notesDisplay}
         <div class="voter-actions">
-            <button class="btn btn-sm btn-outline-primary" onclick="openUpdateModal(${voter.id}, '${voter.voter_name.replace(/'/g, "\\'")}', '${voter.voter_id}', '${voter.phone_number || ''}')">
+            <button class="btn btn-sm btn-outline-primary" onclick="openUpdateModal(${voter.id}, '${voter.voter_name.replace(/'/g, "\\'")}', '${voter.voter_id}', '${voter.phone_number || ''}', '${voter.house_number || ''}')">
                 <i class="bi bi-pencil"></i> Update
             </button>
             <button class="btn btn-sm btn-outline-success" onclick="markAsVisited(${voter.id})">
