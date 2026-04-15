@@ -84,20 +84,11 @@ function handleFileSelect(file) {
     uploadPDF(file);
 }
 
-document.getElementById('exportBtn')?.addEventListener('click', exportData);
+document.getElementById('exportBtn').addEventListener('click', exportData);
 
-function exportData() {
-    // Prompt user to choose between CSV and Excel format
-    const format = confirm('Click OK to export as CSV, or Cancel to export as Excel.') ? 'csv' : 'excel';
-    const url = `${API_BASE}/export?type=${format}&filter=all`;
-    
-    const a = document.createElement('a');
-    a.href = url;
-    a.target = '_blank';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-}
+
+function exportData() {\n    const filter = document.getElementById('exportFilter').value;\n    const type = document.getElementById('exportType').value;\n    const url = `${API_BASE}/export?type=${type}&filter=${filter}`;\n    \n    const a = document.createElement('a');\n    a.href = url;\n    a.target = '_blank';\n    a.download = '';\n    document.body.appendChild(a);\n    a.click();\n    document.body.removeChild(a);\n    showToast('Download', `Exporting ${filter} voters as ${type.toUpperCase()}`, 'info');\n}
+
 
 function uploadPDF(file) {
     const formData = new FormData();
@@ -262,32 +253,7 @@ function displaySearchResults(voters) {
     document.getElementById('noDataAlert').style.display = 'none';
 }
 
-function createVoterElement(voter) {
-    const div = document.createElement('div');
-    div.className = 'voter-item';
-
-    const statusBadge = voter.status || 'not_visited';
-    const statusDisplay = statusBadge.replace('_', ' ').charAt(0).toUpperCase() +
-        statusBadge.replace('_', ' ').slice(1);
-
-    div.innerHTML = `
-        <div class="voter-name">${voter.voter_name}</div>
-        <div class="voter-id"><strong>ID:</strong> ${voter.voter_id}</div>
-        <div class="voter-booth"><strong>Booth:</strong> ${voter.booth_number}</div>
-        <span class="voter-status ${statusBadge}">${statusDisplay}</span>
-        ${voter.custom_notes ? `<div class="voter-notes"><strong>Notes:</strong> ${voter.custom_notes}</div>` : ''}
-        <div class="voter-actions">
-            <button class="btn btn-sm btn-outline-primary" onclick="openUpdateModal(${voter.id}, '${voter.voter_name}', '${voter.voter_id}')">
-                <i class="bi bi-pencil"></i> Update
-            </button>
-            <button class="btn btn-sm btn-outline-success" onclick="markAsVisited(${voter.id})">
-                <i class="bi bi-check-circle"></i> Mark Visited
-            </button>
-        </div>
-    `;
-
-    return div;
-}
+function createVoterElement(voter) {\n    const div = document.createElement('div');\n    div.className = 'voter-item';\n\n    const statusBadge = voter.status || 'not_visited';\n    const statusDisplay = statusBadge.replace('_', ' ').charAt(0).toUpperCase() +\n        statusBadge.replace('_', ' ').slice(1);\n\n    const phoneDisplay = voter.phone_number ? `<div class="voter-phone"><strong>Phone:</strong> ${voter.phone_number}</div>` : '';\n\n    div.innerHTML = `\n        <div class="voter-name">${voter.voter_name}</div>\n        <div class="voter-id"><strong>ID:</strong> ${voter.voter_id}</div>\n        <div class="voter-booth"><strong>Booth:</strong> ${voter.booth_number}</div>\n        ${phoneDisplay}\n        <span class="voter-status ${statusBadge}">${statusDisplay}</span>\n        ${voter.custom_notes ? `<div class="voter-notes"><strong>Notes:</strong> ${voter.custom_notes}</div>` : ''}\n        <div class="voter-actions">\n            <button class="btn btn-sm btn-outline-primary" onclick="openUpdateModal(${voter.id}, '${voter.voter_name}', '${voter.voter_id}', '${voter.phone_number || ''}')">\n                <i class="bi bi-pencil"></i> Update\n            </button>\n            <button class="btn btn-sm btn-outline-success" onclick="markAsVisited(${voter.id})">\n                <i class="bi bi-check-circle"></i> Mark Visited\n            </button>\n        </div>\n    `;\n\n    return div;\n}
 
 function clearSearch() {
     document.getElementById('searchInput').value = '';
