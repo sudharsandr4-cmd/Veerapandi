@@ -67,11 +67,17 @@ def login():
         password = request.form['password']
         error = None
         user = get_user_by_username(username)
-
-        if user is None or not check_password_hash(user['password'], password):
+        
+        # Improved check with detailed logging
+        if user is None:
+            print(f"Login failed: User '{username}' not found in the database.")
+            error = 'Incorrect username or password.'
+        elif not check_password_hash(user['password'], password):
+            print(f"Login failed: Incorrect password for user '{username}'.")
             error = 'Incorrect username or password.'
         
         if error is None:
+            print(f"Login successful for user '{username}'.")
             session.clear()
             session['user_id'] = user['id']
             session['username'] = user['username']
