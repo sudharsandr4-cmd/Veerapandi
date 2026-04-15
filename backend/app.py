@@ -14,7 +14,7 @@ from functools import wraps
 from database import (
     init_db, add_booth, get_all_booths, 
     get_voters_by_booth, search_voters, update_voter, 
-    get_voter_stats, clear_all_data, add_user, get_user_by_username,
+    get_voter_stats, clear_all_data, add_user, get_user_by_username, get_all_users,
     upsert_voters
 )
 
@@ -115,6 +115,21 @@ def create_veera_users_command():
         add_user(username, password)
         print(f" -> Created user: {username}")
     print("\nBulk user creation complete.")
+
+@app.cli.command('list-users')
+def list_users_command():
+    """Lists all registered users in the database."""
+    users = get_all_users()
+    if not users:
+        print("No users found in the database.")
+        return
+    
+    print("\nRegistered Users:")
+    print("-----------------")
+    for user in users:
+        print(f"ID: {user['id']}, Username: {user['username']}")
+    print("-----------------")
+
 
 # ==================== PAGE ROUTES ====================
 

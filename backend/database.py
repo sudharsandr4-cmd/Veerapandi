@@ -119,6 +119,16 @@ def get_user_by_username(username):
     conn.close()
     return user
 
+def get_all_users():
+    """Retrieves all users from the database."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, username FROM users ORDER BY username')
+    users = cursor.fetchall()
+    conn.close()
+    return [dict(user) for user in users]
+
+
 def upsert_voters(voters_data: list):
     """
     Upserts a list of voters from a pandas DataFrame.
