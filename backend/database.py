@@ -1,6 +1,7 @@
 import sqlite3
 import os
 from datetime import datetime
+from werkzeug.security import generate_password_hash
 
 # Use absolute path for database to ensure it works in Railway
 DB_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -24,6 +25,15 @@ def init_db():
             booth_number TEXT UNIQUE NOT NULL,
             booth_name TEXT NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    # Create Users table for authentication
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL
         )
     ''')
     
@@ -84,6 +94,67 @@ def add_booth(booth_number, booth_name):
         result = cursor.fetchone()
         conn.close()
         return result['id'] if result else None
+
+def add_user(username, password):
+    """Adds a new user with a hashed password."""
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            'INSERT INTO users (username, password) VALUES (?, ?)',
+            (username, generate_password_hash(password))
+        )
+        conn.commit()
+    except sqlite3.IntegrityError:
+        print(f"User {username} already exists.")
+    finally:
+        conn.close()
+
+def get_user_by_username(username):
+    """Retrieves a user by their username."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM users WHERE username = ?', (username,))
+    user = cursor.fetchone()
+    conn.close()
+    return user
+
+def upsert_voters(voters_data: list):
+    """
+    Upserts a list of voters from a pandas DataFrame.
+    If voter_id exists, it updates the record. Otherwise, it inserts a new one.
+    """
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    added_count = 0
+    updated_count = 0
+    
+    # Ensure all booths from the file exist before processing voters
+    booth_numbers = {v['booth_number'] for v in voters_data if v.get('booth_number')}
+    for booth_num in booth_numbers:
+        add_booth(booth_num, f'Booth {booth_num}')
+
+    for voter in voters_data:
+        cursor.execute('SELECT id FROM voters WHERE voter_id = ?', (voter['voter_id'],))
+        existing_voter = cursor.fetchone()
+        
+        cursor.execute('SELECT id FROM booths WHERE booth_number = ?', (voter['booth_number'],))
+        booth_id = cursor.fetchone()['id']
+
+        if existing_voter:
+            cursor.execute(
+                'UPDATE voters SET voter_name = ?, house_number = ?, booth_id = ?, booth_number = ? WHERE id = ?',
+                (voter['voter_name'], voter.get('house_number'), booth_id, voter['booth_number'], existing_voter['id'])
+            )
+            updated_count += 1
+        else:
+            add_voter(voter['voter_id'], voter['voter_name'], voter['booth_number'], voter.get('house_number'))
+            added_count += 1
+            
+    conn.commit()
+    conn.close()
+    return added_count, updated_count
 
 def add_voter(voter_id, voter_name, booth_number, house_number=None):
     """Add a new voter to the database"""
@@ -196,20 +267,21 @@ def update_voter(voter_id, status=None, phone_number=None, custom_notes=None, ho
 
 def get_voter_stats(booth_id=None):
     """Get statistics about voters"""
+    # "Visited" is now defined as having a phone number added.
     conn = get_db()
     cursor = conn.cursor()
     
     if booth_id:
         cursor.execute(
             '''SELECT COUNT(*) as total, 
-                      SUM(CASE WHEN status = 'visited' THEN 1 ELSE 0 END) as visited
+                      SUM(CASE WHEN phone_number IS NOT NULL AND phone_number != '' THEN 1 ELSE 0 END) as visited
                FROM voters WHERE booth_id = ?''',
             (booth_id,)
         )
     else:
         cursor.execute(
             '''SELECT COUNT(*) as total, 
-                      SUM(CASE WHEN status = 'visited' THEN 1 ELSE 0 END) as visited
+                      SUM(CASE WHEN phone_number IS NOT NULL AND phone_number != '' THEN 1 ELSE 0 END) as visited
                FROM voters'''
         )
     

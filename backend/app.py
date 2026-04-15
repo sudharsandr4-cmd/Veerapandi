@@ -1,18 +1,22 @@
-from flask import Flask, render_template, request, jsonify, send_file
+from flask import Flask, render_template, request, jsonify, send_file, session, redirect, url_for
 from flask_cors import CORS
 import os
 import tempfile
 import traceback
 import uuid
 import pandas as pd
+import re
+import click
 from io import BytesIO
 from werkzeug.utils import secure_filename
+from werkzeug.security import check_password_hash
+from functools import wraps
 from database import (
-    init_db, add_booth, add_voter, get_all_booths, 
+    init_db, add_booth, get_all_booths, 
     get_voters_by_booth, search_voters, update_voter, 
-    get_voter_stats, clear_all_data
+    get_voter_stats, clear_all_data, add_user, get_user_by_username,
+    upsert_voters
 )
-from pdf_parser import extract_voters_from_pdf
 
 base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 app = Flask(__name__,
@@ -24,10 +28,12 @@ CORS(app, resources={
     }
 })
 
+app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-for-flask-sessions')
+
 # Configuration
 DEFAULT_UPLOAD_DIR = os.path.join(tempfile.gettempdir(), 'voter-management-uploads')
 UPLOAD_FOLDER = os.environ.get('UPLOAD_FOLDER', DEFAULT_UPLOAD_DIR)
-ALLOWED_EXTENSIONS = {'pdf'}
+ALLOWED_EXTENSIONS = {'xlsx', 'csv'}
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -42,14 +48,198 @@ def allowed_file(filename):
 # Initialize database on startup
 init_db()
 
-# ==================== ROUTES ====================
+# ==================== AUTHENTICATION ====================
+
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            if request.path.startswith('/api/'):
+                return jsonify({'status': 'error', 'message': 'Authentication required'}), 401
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        error = None
+        user = get_user_by_username(username)
+
+        if user is None or not check_password_hash(user['password'], password):
+            error = 'Incorrect username or password.'
+        
+        if error is None:
+            session.clear()
+            session['user_id'] = user['id']
+            session['username'] = user['username']
+            return redirect(url_for('dashboard'))
+        
+        return render_template('login.html', error=error)
+    
+    # If user is already logged in, redirect to dashboard
+    if 'user_id' in session:
+        return redirect(url_for('dashboard'))
+        
+    return render_template('login.html')
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
+
+@app.cli.command('create-user')
+@click.argument('username')
+@click.argument('password')
+def create_user_command(username, password):
+    """Creates a new user for login."""
+    add_user(username, password)
+    print(f'User {username} created successfully.')
+
+# ==================== PAGE ROUTES ====================
 
 @app.route('/')
-def index():
+def root():
+    return redirect(url_for('login'))
+
+@app.route('/dashboard')
+@login_required
+def dashboard():
     """Main dashboard page"""
     return render_template('index.html')
 
+@app.route('/api/upload-file', methods=['POST'])
+@login_required
+def upload_file():
+    """Upload and parse voter list from Excel or CSV"""
+    filepath = None
+    try:
+        # Check if file is present
+        if 'file' not in request.files:
+            return jsonify({
+                'status': 'error',
+                'message': 'No file provided'
+            }), 400
+        
+        file = request.files['file']
+        
+        if file.filename == '':
+            return jsonify({
+                'status': 'error',
+                'message': 'No file selected'
+            }), 400
+        
+        if not allowed_file(file.filename):
+            return jsonify({
+                'status': 'error',
+                'message': 'Only .xlsx and .csv files are allowed'
+            }), 400
+        
+        original_name = secure_filename(file.filename)
+        filename = f"{uuid.uuid4().hex}_{original_name}"
+        
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(filepath)
+        
+        # Use pandas to read file
+        if file.filename.endswith('.csv'):
+            df = pd.read_csv(filepath)
+        else:
+            df = pd.read_excel(filepath)
+
+        # Normalize column names (lowercase, replace space with underscore)
+        df.columns = [col.strip().lower().replace(' ', '_') for col in df.columns]
+
+        # Define expected columns and their mapping
+        column_map = {
+            'epic_number': 'voter_id',
+            'name': 'voter_name',
+            'house_number': 'house_number'
+        }
+        
+        # Check for required columns
+        required_cols = ['epic_number', 'name']
+        if not all(col in df.columns for col in required_cols):
+             return jsonify({'status': 'error', 'message': 'Missing required columns in file: EPIC Number, Name'}), 400
+
+        df.rename(columns=column_map, inplace=True)
+
+        # Extract booth number from filename (e.g., booth-123.xlsx)
+        match = re.search(r'(\d+)', original_name)
+        if match:
+            booth_number = match.group(1)
+            df['booth_number'] = booth_number
+        else:
+            return jsonify({'status': 'error', 'message': "Could not determine Booth Number. Please name your file like 'booth-123.xlsx' or 'part-42.csv'."}), 400
+
+        # Ensure voter_id is a string
+        df['voter_id'] = df['voter_id'].astype(str)
+
+        voters_data = df.to_dict('records')
+        
+        added, updated = upsert_voters(voters_data)
+        
+        # Clean up uploaded file after processing
+        if os.path.exists(filepath):
+            os.remove(filepath)
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Successfully processed file. Added: {added}, Updated: {updated}',
+            'added_voters': added,
+            'updated_voters': updated
+        })
+    
+    except Exception as e:
+        print("Error processing file upload:")
+        print(traceback.format_exc())
+        return jsonify({
+            'status': 'error',
+            'message': f'Error processing file: {str(e)}'
+        }), 500
+    finally:
+        if filepath and os.path.exists(filepath):
+            try:
+                os.remove(filepath)
+            except OSError:
+                pass
+
+# ==================== API ROUTES ====================
+
+@app.route('/api/stats', methods=['GET'])
+@login_required
+def get_stats():
+    """Get overall statistics"""
+    try:
+        booths = get_all_booths()
+        stats = get_voter_stats()
+        
+        return jsonify({
+            'status': 'success',
+            'total_voters': stats['total'],
+            'visited_voters': stats['visited'] or 0,
+            'total_booths': len(booths)
+        })
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/clear-data', methods=['POST'])
+@login_required
+def clear_data():
+    """Clear all data from database (for testing/reset)"""
+    try:
+        clear_all_data()
+        return jsonify({
+            'status': 'success',
+            'message': 'All data cleared successfully'
+        })
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
 @app.route('/api/booths', methods=['GET'])
+@login_required
 def get_booths():
     """Get all booths"""
     try:
@@ -63,6 +253,7 @@ def get_booths():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/booth/<int:booth_id>/voters', methods=['GET'])
+@login_required
 def get_booth_voters(booth_id):
     """Get voters for a specific booth"""
     try:
@@ -78,6 +269,7 @@ def get_booth_voters(booth_id):
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/search', methods=['GET'])
+@login_required
 def search():
     """Search voters by name or ID"""
     try:
@@ -102,6 +294,7 @@ def search():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/voter/<int:voter_id>', methods=['PUT'])
+@login_required
 def update_voter_info(voter_id):
     """Update voter information"""
     try:
@@ -127,178 +320,31 @@ def update_voter_info(voter_id):
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/export', methods=['GET'])
+@login_required
 def export_voters():
     """Export voters to CSV or Excel"""
     try:
         export_type = request.args.get('type', 'csv').lower()
-        filter_status = request.args.get('filter', 'all').lower()
         
-        if export_type not in ['csv', 'excel']:
-            return jsonify({'status': 'error', 'message': 'Type must be csv or excel'}), 400
-        
-        # Get all voters
-        # Use the existing get_db from database.py
         from database import get_db
         conn = get_db() 
-        cursor = conn.cursor()
-        
-        if filter_status == 'visited':
-            status_condition = "WHERE status = 'visited'"
-        elif filter_status == 'remaining':
-            status_condition = "WHERE status != 'visited' OR status IS NULL"
-        else:
-            status_condition = ""
-        
-        cursor.execute(f'''
-            SELECT voter_name, voter_id, house_number, booth_number, phone_number, status, custom_notes 
-            FROM voters {status_condition}
-            ORDER BY booth_number, voter_name
-        ''')
-        voters = [dict(row) for row in cursor.fetchall()]
+        query = "SELECT voter_name, voter_id, house_number, booth_number, phone_number, status, custom_notes FROM voters ORDER BY booth_number, voter_name"
+        df = pd.read_sql_query(query, conn)
         conn.close()
         
-        if not voters:
-            return jsonify({'status': 'error', 'message': 'No voters found'}), 404
+        if df.empty:
+            return jsonify({'status': 'error', 'message': 'No voters found to export'}), 404
         
-        df = pd.DataFrame(voters)
-        
+        output = BytesIO()
         if export_type == 'csv':
-            output = BytesIO()
             df.to_csv(output, index=False)
             output.seek(0)
-            return send_file(output, mimetype='text/csv', as_attachment=True, 
-                           download_name=f'voters_{filter_status}.csv')
-        else:
-            output = BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df.to_excel(writer, index=False, sheet_name='Voters')
+            return send_file(output, mimetype='text/csv', as_attachment=True, download_name='voters_export.csv')
+        else: # excel
+            df.to_excel(output, index=False, sheet_name='Voters')
             output.seek(0)
-            return send_file(output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 
-                           as_attachment=True, download_name=f'voters_{filter_status}.xlsx')
+            return send_file(output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', as_attachment=True, download_name='voters_export.xlsx')
     
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-
-@app.route('/api/upload-pdf', methods=['POST'])
-def upload_pdf():
-    """Upload and parse voter list PDF"""
-    filepath = None
-    try:
-        # Check if file is present
-        if 'pdf_file' not in request.files:
-            return jsonify({
-                'status': 'error',
-                'message': 'No file provided'
-            }), 400
-        
-        file = request.files['pdf_file']
-        
-        if file.filename == '':
-            return jsonify({
-                'status': 'error',
-                'message': 'No file selected'
-            }), 400
-        
-        if not allowed_file(file.filename):
-            return jsonify({
-                'status': 'error',
-                'message': 'Only PDF files are allowed'
-            }), 400
-        
-        # Get custom filename if provided
-        custom_filename = request.form.get('custom_filename', '').strip()
-        if custom_filename:
-            _, ext = os.path.splitext(file.filename)
-            if not ext:
-                ext = '.pdf'
-            filename = secure_filename(custom_filename + ext)
-        else:
-            original_name = secure_filename(file.filename)
-            filename = f"{uuid.uuid4().hex}_{original_name}"
-        
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        print(f"Receiving upload: {file.filename} -> {filepath}")
-        file.save(filepath)
-        file_size = os.path.getsize(filepath)
-        print(f"Saved upload ({file_size} bytes). Starting parse...")
-        
-        # Parse PDF
-        voters, booths = extract_voters_from_pdf(filepath)
-        print(f"Parse finished. Extracted {len(voters)} voters across {len(booths)} booths.")
-        
-        if not voters:
-            os.remove(filepath)
-            return jsonify({
-                'status': 'error',
-                'message': 'Could not extract voter data from PDF. Please ensure it contains voter information with columns for Name, Voter ID (EPIC), and Booth Number.'
-            }), 400
-        
-        # Add booths and voters to database
-        booth_ids = {}
-        for booth_num in booths:
-            booth_id = add_booth(booth_num, f'Booth {booth_num}')
-            booth_ids[booth_num] = booth_id
-        
-        added_voters = 0
-        skipped_voters = 0
-        
-        for voter in voters:
-            if add_voter(voter['voter_id'], voter['voter_name'], voter['booth_number'], voter.get('house_number')):
-                added_voters += 1
-            else:
-                skipped_voters += 1
-        
-        # Clean up uploaded file after processing
-        if os.path.exists(filepath):
-            os.remove(filepath)
-        
-        return jsonify({
-            'status': 'success',
-            'message': f'Successfully added {added_voters} voters (filename: {filename})',
-            'added_voters': added_voters,
-            'skipped_voters': skipped_voters,
-            'total_booths': len(booths)
-        })
-    
-    except Exception as e:
-        print("Error processing PDF upload:")
-        print(traceback.format_exc())
-        return jsonify({
-            'status': 'error',
-            'message': f'Error processing PDF: {str(e)}'
-        }), 500
-    finally:
-        if filepath and os.path.exists(filepath):
-            try:
-                os.remove(filepath)
-            except OSError:
-                pass
-
-@app.route('/api/stats', methods=['GET'])
-def get_stats():
-    """Get overall statistics"""
-    try:
-        booths = get_all_booths()
-        stats = get_voter_stats()
-        
-        return jsonify({
-            'status': 'success',
-            'total_voters': stats['total'],
-            'visited_voters': stats['visited'] or 0,
-            'total_booths': len(booths)
-        })
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-
-@app.route('/api/clear-data', methods=['POST'])
-def clear_data():
-    """Clear all data from database (for testing/reset)"""
-    try:
-        clear_all_data()
-        return jsonify({
-            'status': 'success',
-            'message': 'All data cleared successfully'
-        })
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
@@ -332,6 +378,6 @@ if __name__ == '__main__':
     print("Starting Voter Data Management System...")
     port = int(os.environ.get('PORT', 8080))
     debug = os.environ.get('FLASK_ENV') == 'development'
-    print(f"Backend running at http://0.0.0.0:{port}")
+    print(f"Backend running at http://127.0.0.1:{port}")
     print(f"Temporary upload folder: {app.config['UPLOAD_FOLDER']}")
-    app.run(debug=debug, host='0.0.0.0', port=port)
+    app.run(debug=debug, host='127.0.0.1', port=port)

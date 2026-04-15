@@ -8,17 +8,38 @@ const API_BASE = `${window.location.origin}/api`;
 
 // ==================== INITIALIZATION ====================
 document.addEventListener('DOMContentLoaded', function() {
-    initializeEventListeners();
-    loadBooths();
-    loadStats();
-    setupUploadArea();
+    // First, check if we are authenticated by trying to load stats.
+    // If it fails with 401, we will be redirected to login.
+    loadInitialData();
 });
+
+function loadInitialData() {
+    fetch(`${API_BASE}/stats`)
+        .then(response => {
+            if (response.status === 401) {
+                window.location.href = '/login'; // Redirect to login
+                return null;
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data) { // Only proceed if we are authenticated
+                initializeEventListeners();
+                populateStats(data); // Use initial stats load
+                loadBooths();
+            }
+        })
+        .catch(error => {
+            console.error('Initial data load failed:', error);
+            // Potentially show an error message that the backend is down
+        });
+}
 
 // ==================== EVENT LISTENERS ====================
 function initializeEventListeners() {
     // Upload
     document.getElementById('uploadArea').addEventListener('click', () => {
-        document.getElementById('pdfInput').click();
+        document.getElementById('fileInput').click();
     });
 
     document.getElementById('uploadArea').addEventListener('dragover', (e) => {
@@ -38,7 +59,7 @@ function initializeEventListeners() {
         }
     });
 
-    document.getElementById('pdfInput').addEventListener('change', (e) => {
+    document.getElementById('fileInput').addEventListener('change', (e) => {
         if (e.target.files.length) {
             handleFileSelect(e.target.files[0]);
         }
@@ -60,19 +81,19 @@ function initializeEventListeners() {
 
     // Update modal
     document.getElementById('saveUpdateBtn').addEventListener('click', saveVoterUpdate);
-}
 
-function setupUploadArea() {
-    const uploadArea = document.getElementById('uploadArea');
-    const pdfInput = document.getElementById('pdfInput');
-
-    uploadArea.addEventListener('click', () => pdfInput.click());
+    // Export buttons
+    document.getElementById('exportCsvBtn').addEventListener('click', () => exportData('csv'));
+    document.getElementById('exportXlsxBtn').addEventListener('click', () => exportData('excel'));
 }
 
 // ==================== FILE UPLOAD ====================
 function handleFileSelect(file) {
-    if (file.type !== 'application/pdf') {
-        showToast('Error', 'Please select a PDF file', 'danger');
+    const allowedTypes = ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'text/csv'];
+    const isAllowed = allowedTypes.includes(file.type) || file.name.endsWith('.csv') || file.name.endsWith('.xlsx');
+    
+    if (!isAllowed) {
+        showToast('Error', 'Please select an Excel (.xlsx) or CSV (.csv) file.', 'danger');
         return;
     }
 
@@ -81,39 +102,30 @@ function handleFileSelect(file) {
         return;
     }
 
-    uploadPDF(file);
+    uploadFile(file);
 }
 
-document.getElementById('exportBtn').addEventListener('click', exportData);
-
-
-function exportData() {\n    const filter = document.getElementById('exportFilter').value;\n    const type = document.getElementById('exportType').value;\n    const url = `${API_BASE}/export?type=${type}&filter=${filter}`;\n    \n    const a = document.createElement('a');\n    a.href = url;\n    a.target = '_blank';\n    a.download = '';\n    document.body.appendChild(a);\n    a.click();\n    document.body.removeChild(a);\n    showToast('Download', `Exporting ${filter} voters as ${type.toUpperCase()}`, 'info');\n}
-
-
-function uploadPDF(file) {
+function uploadFile(file) {
     const formData = new FormData();
-    formData.append('pdf_file', file);
-    const customFilename = document.getElementById('customFilename') ? document.getElementById('customFilename').value.trim() : '';
-    if (customFilename) {
-        formData.append('custom_filename', customFilename);
-    }
+    formData.append('file', file);
 
     document.getElementById('uploadProgress').style.display = 'block';
     document.getElementById('uploadResult').style.display = 'none';
     document.getElementById('progressBar').style.width = '0%';
 
-    fetch(`${API_BASE}/upload-pdf`, {
+    fetch(`${API_BASE}/upload-file`, {
         method: 'POST',
         body: formData
     })
         .then(async response => {
             updateProgress(100);
-
+            if (response.status === 401) {
+                window.location.href = '/login';
+                return null;
+            }
             const contentType = response.headers.get('content-type') || '';
             const isJson = contentType.includes('application/json');
-            const data = isJson
-                ? await response.json()
-                : { status: 'error', message: `Upload failed with HTTP ${response.status}` };
+            const data = isJson ? await response.json() : { status: 'error', message: `Upload failed with HTTP ${response.status}` };
 
             if (!response.ok) {
                 throw new Error(data.message || `Upload failed with HTTP ${response.status}`);
@@ -122,13 +134,14 @@ function uploadPDF(file) {
             return data;
         })
         .then(data => {
+            if (!data) return;
+
             document.getElementById('uploadProgress').style.display = 'none';
 
             if (data.status === 'success') {
-                showUploadResult(true, `Successfully uploaded!
-                Added: ${data.added_voters} voters
-                Booths: ${data.total_booths}
-                Skipped: ${data.skipped_voters}`);
+                showUploadResult(true, `Successfully processed!
+                Added: ${data.added_voters}
+                Updated: ${data.updated_voters}`);
                 showToast('Success', data.message, 'success');
 
                 setTimeout(() => {
@@ -167,14 +180,20 @@ function showUploadResult(success, message) {
 // ==================== BOOTH MANAGEMENT ====================
 function loadBooths() {
     fetch(`${API_BASE}/booths`)
-        .then(response => response.json())
+        .then(response => {
+            if (response.status === 401) { window.location.href = '/login'; return null; }
+            return response.json();
+        })
         .then(data => {
-            if (data.status === 'success') {
+            if (data && data.status === 'success') {
                 allBooths = data.booths;
                 populateBoothSelect();
             }
         })
-        .catch(error => console.error('Error loading booths:', error));
+        .catch(error => {
+            console.error('Error loading booths:', error)
+            showToast('Error', 'Could not load booth data.', 'danger');
+        });
 }
 
 function populateBoothSelect() {
@@ -217,9 +236,12 @@ function performSearch() {
     }
 
     fetch(url)
-        .then(response => response.json())
+        .then(response => {
+            if (response.status === 401) { window.location.href = '/login'; return null; }
+            return response.json();
+        })
         .then(data => {
-            if (data.status === 'success') {
+            if (data && data.status === 'success') {
                 displaySearchResults(data.voters);
                 document.getElementById('resultsInfo').style.display = 'block';
                 document.getElementById('resultsCount').textContent = data.count;
@@ -335,12 +357,16 @@ function saveVoterUpdate() {
         },
         body: JSON.stringify(payload)
     })
-        .then(response => response.json())
+        .then(response => {
+            if (response.status === 401) { window.location.href = '/login'; return null; }
+            return response.json();
+        })
         .then(data => {
-            if (data.status === 'success') {
+            if (data && data.status === 'success') {
                 showToast('Success', 'Voter updated successfully', 'success');
                 bootstrap.Modal.getInstance(document.getElementById('updateModal')).hide();
 
+                // Re-run the current search to refresh the list
                 performSearch();
                 loadStats();
             } else {
@@ -363,9 +389,12 @@ function markAsVisited(voterId) {
             status: 'visited'
         })
     })
-        .then(response => response.json())
+        .then(response => {
+            if (response.status === 401) { window.location.href = '/login'; return null; }
+            return response.json();
+        })
         .then(data => {
-            if (data.status === 'success') {
+            if (data && data.status === 'success') {
                 showToast('Success', 'Marked as visited', 'success');
                 performSearch();
                 loadStats();
@@ -377,23 +406,29 @@ function markAsVisited(voterId) {
 // ==================== STATISTICS ====================
 function loadStats() {
     fetch(`${API_BASE}/stats`)
-        .then(response => response.json())
+        .then(response => {
+            if (response.status === 401) { window.location.href = '/login'; return null; }
+            return response.json();
+        })
         .then(data => {
-            if (data.status === 'success') {
-                document.getElementById('totalVoters').textContent = data.total_voters || 0;
-                document.getElementById('visitedVoters').textContent = data.visited_voters || 0;
-                document.getElementById('remainingVoters').textContent =
-                    (data.total_voters || 0) - (data.visited_voters || 0);
-                document.getElementById('totalBooths').textContent = data.total_booths || 0;
-
-                if (data.total_voters === 0) {
-                    document.getElementById('noDataAlert').style.display = 'block';
-                }
-            }
+            if (data) populateStats(data);
         })
         .catch(error => console.error('Error loading stats:', error));
 }
 
+function populateStats(data) {
+    if (data.status === 'success') {
+        document.getElementById('totalVoters').textContent = data.total_voters || 0;
+        document.getElementById('visitedVoters').textContent = data.visited_voters || 0;
+        document.getElementById('totalBooths').textContent = data.total_booths || 0;
+
+        if (data.total_voters === 0) {
+            document.getElementById('noDataAlert').style.display = 'block';
+        } else {
+            document.getElementById('noDataAlert').style.display = 'none';
+        }
+    }
+}
 // ==================== DATA MANAGEMENT ====================
 function confirmClearData() {
     if (confirm('Are you sure you want to delete ALL voter data? This action cannot be undone.')) {
@@ -405,9 +440,12 @@ function clearAllData() {
     fetch(`${API_BASE}/clear-data`, {
         method: 'POST'
     })
-        .then(response => response.json())
+        .then(response => {
+            if (response.status === 401) { window.location.href = '/login'; return null; }
+            return response.json();
+        })
         .then(data => {
-            if (data.status === 'success') {
+            if (data && data.status === 'success') {
                 showToast('Success', 'All data cleared', 'success');
                 document.getElementById('votersContainer').innerHTML = '';
                 document.getElementById('votersCard').style.display = 'none';
@@ -421,6 +459,17 @@ function clearAllData() {
             showToast('Error', 'Failed to clear data', 'danger');
         });
 }
+
+// ==================== DATA EXPORT ====================
+function exportData(type) {
+    const url = `${API_BASE}/export?type=${type}`;
+    
+    // Open in a new tab to handle download
+    window.open(url, '_blank');
+
+    showToast('Download', `Exporting all voters as ${type.toUpperCase()}`, 'info');
+}
+
 
 // ==================== TOAST NOTIFICATIONS ====================
 function showToast(title, message, type = 'info') {
