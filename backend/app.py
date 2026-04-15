@@ -10,7 +10,7 @@ from werkzeug.utils import secure_filename
 from database import (
     init_db, add_booth, add_voter, get_all_booths, 
     get_voters_by_booth, search_voters, update_voter, 
-    get_voter_stats, clear_all_data, get_db
+    get_voter_stats, clear_all_data
 )
 from pdf_parser import extract_voters_from_pdf
 
@@ -109,14 +109,15 @@ def update_voter_info(voter_id):
         status = data.get('status')
         phone_number = data.get('phone_number')
         custom_notes = data.get('custom_notes')
+        house_number = data.get('house_number')
         
-        if not any([status, phone_number, custom_notes]):
+        if not any([status, phone_number, custom_notes, house_number]):
             return jsonify({
                 'status': 'error',
                 'message': 'At least one field must be provided'
             }), 400
         
-        update_voter(voter_id, status, phone_number, custom_notes)
+        update_voter(voter_id, status, phone_number, custom_notes, house_number)
         
         return jsonify({
             'status': 'success',
@@ -136,7 +137,9 @@ def export_voters():
             return jsonify({'status': 'error', 'message': 'Type must be csv or excel'}), 400
         
         # Get all voters
-        conn = get_db()
+        # Use the existing get_db from database.py
+        from database import get_db
+        conn = get_db() 
         cursor = conn.cursor()
         
         if filter_status == 'visited':
@@ -147,7 +150,7 @@ def export_voters():
             status_condition = ""
         
         cursor.execute(f'''
-            SELECT voter_name, voter_id, booth_number, phone_number, status, custom_notes 
+            SELECT voter_name, voter_id, house_number, booth_number, phone_number, status, custom_notes 
             FROM voters {status_condition}
             ORDER BY booth_number, voter_name
         ''')
@@ -240,7 +243,7 @@ def upload_pdf():
         skipped_voters = 0
         
         for voter in voters:
-            if add_voter(voter['voter_id'], voter['voter_name'], voter['booth_number']):
+            if add_voter(voter['voter_id'], voter['voter_name'], voter['booth_number'], voter.get('house_number')):
                 added_voters += 1
             else:
                 skipped_voters += 1

@@ -140,38 +140,46 @@ class VoterPDFParser:
                 current_name = self._extract_name_from_label(normalized)
                 self._append_if_complete(current_name, current_voter_id, current_booth)
     
-    def _extract_voter_from_row(self, row) -> Dict or None:
+    def _extract_voter_from_row(self, row: list) -> Dict or None:
         """Extract voter information from a table row"""
         try:
             voter_info = {}
-            
-            # Clean row data
             clean_row = [str(cell).strip() if cell else '' for cell in row]
-            
-            # Look for patterns in row cells
-            # Usually structure is: Booth | Voter ID | Name | Other columns
-            
-            # Initialize with all possible positions
+            identified_cells = []
+
+            # Pass 1: Identify unique patterns (EPIC, Booth)
             for i, cell in enumerate(clean_row):
                 if not cell:
                     continue
                 
-                # Check if cell looks like a booth number (usually numeric)
-                if re.match(r'^\d+$', cell):
-                    if 'booth_number' not in voter_info:
-                        voter_info['booth_number'] = cell
-                
-                # Check if cell looks like a voter ID (EPIC format)
                 epic_match = self._extract_epic(cell)
-                if epic_match:
+                if epic_match and 'voter_id' not in voter_info:
                     voter_info['voter_id'] = epic_match.group(0)
-                
-                # Check if cell contains alphabetic characters (likely name)
-                if re.search(r'[A-Za-z]{3,}', cell) and not self._looks_like_label(cell):
-                    if 'voter_name' not in voter_info or len(cell) > len(voter_info.get('voter_name', '')):
-                        voter_info['voter_name'] = cell
-            
-            # Return if we have the minimum required info
+                    identified_cells.append(cell)
+                    continue
+
+                if re.match(r'^\d+$', cell) and 'booth_number' not in voter_info:
+                    voter_info['booth_number'] = cell
+                    identified_cells.append(cell)
+                    continue
+
+            # Pass 2: Identify name (longest alphabetic string)
+            name_candidate = ''
+            for cell in clean_row:
+                if cell not in identified_cells and re.search(r'[A-Za-z]{3,}', cell) and not self._looks_like_label(cell):
+                    if len(cell) > len(name_candidate):
+                        name_candidate = cell
+            if name_candidate:
+                voter_info['voter_name'] = name_candidate
+                identified_cells.append(name_candidate)
+
+            # Pass 3: The remaining cell is likely the house number
+            for cell in clean_row:
+                if cell and cell not in identified_cells and not self._looks_like_label(cell):
+                    if 'house_number' not in voter_info:
+                        voter_info['house_number'] = cell
+                        break
+
             if self._is_valid_voter(voter_info):
                 if self._is_duplicate_voter(voter_info['voter_id']):
                     return None
@@ -227,7 +235,7 @@ class VoterPDFParser:
                 found = True
         return found
 
-    def _append_if_complete(self, voter_name: str | None, voter_id: str | None, booth_number: str | None):
+    def _append_if_complete(self, voter_name: str | None, voter_id: str | None, booth_number: str | None, house_number: str | None = None):
         """Append a voter only when the three required fields are present."""
         if not (voter_name and voter_id and booth_number):
             return
@@ -236,6 +244,7 @@ class VoterPDFParser:
             'voter_name': self._clean_name(voter_name),
             'voter_id': voter_id,
             'booth_number': booth_number,
+            'house_number': house_number,
         }
         if self._is_valid_voter(voter_info) and not self._is_duplicate_voter(voter_id):
             self.voters.append(voter_info)

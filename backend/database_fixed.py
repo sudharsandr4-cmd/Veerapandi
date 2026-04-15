@@ -7,13 +7,13 @@ DB_DIR = os.path.dirname(os.path.abspath(__file__))
 DATABASE_PATH = os.path.join(DB_DIR, 'voters.db')
 
 def get_db():
-    \"\"\"Get database connection\"\"\"
+    """Get database connection"""
     conn = sqlite3.connect(DATABASE_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
 def init_db():
-    \"\"\"Initialize database with tables\"\"\"
+    """Initialize database with tables"""
     conn = get_db()
     cursor = conn.cursor()
     
@@ -63,7 +63,7 @@ def init_db():
     conn.close()
 
 def add_booth(booth_number, booth_name):
-    \"\"\"Add a new booth to the database\"\"\"
+    """Add a new booth to the database"""
     conn = get_db()
     cursor = conn.cursor()
     try:
@@ -86,7 +86,7 @@ def add_booth(booth_number, booth_name):
         return result['id'] if result else None
 
 def add_voter(voter_id, voter_name, booth_number, house_number=None):
-    \"\"\"Add a new voter to the database\"\"\"
+    """Add a new voter to the database"""
     conn = get_db()
     cursor = conn.cursor()
     
@@ -115,7 +115,7 @@ def add_voter(voter_id, voter_name, booth_number, house_number=None):
         return None
 
 def get_all_booths():
-    \"\"\"Get all booths\"\"\"
+    """Get all booths"""
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute('SELECT id, booth_number, booth_name FROM booths ORDER BY booth_number')
@@ -124,7 +124,7 @@ def get_all_booths():
     return [dict(booth) for booth in booths]
 
 def get_voters_by_booth(booth_id):
-    \"\"\"Get all voters in a booth\"\"\"
+    """Get all voters in a booth"""
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute(
@@ -137,7 +137,7 @@ def get_voters_by_booth(booth_id):
     return [dict(voter) for voter in voters]
 
 def search_voters(search_term, booth_id=None):
-    \"\"\"Search voters by name or voter ID\"\"\"
+    """Search voters by name or voter ID"""
     conn = get_db()
     cursor = conn.cursor()
     search_param = f'%{search_term}%'
@@ -162,66 +162,3 @@ def search_voters(search_term, booth_id=None):
     voters = cursor.fetchall()
     conn.close()
     return [dict(voter) for voter in voters]
-
-def update_voter(voter_id, status=None, phone_number=None, custom_notes=None, house_number=None):
-    \"\"\"Update voter information\"\"\"
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    updates = []
-    params = []
-    
-    if status is not None:
-        updates.append(\"status = ?\" )
-        params.append(status)
-    if phone_number is not None:
-        updates.append(\"phone_number = ?\" )
-        params.append(phone_number)
-    if custom_notes is not None:
-        updates.append(\"custom_notes = ?\" )
-        params.append(custom_notes)
-    if house_number is not None:
-        updates.append("house_number = ?")
-        params.append(house_number)
-    
-    if updates:
-        updates.append(\"updated_at = CURRENT_TIMESTAMP\" )
-        params.append(voter_id)
-        set_clause = ', '.join(updates)
-        query = f'''UPDATE voters SET {set_clause} WHERE id = ?'''
-        cursor.execute(query, params)
-    
-    conn.commit()
-    conn.close()
-
-def get_voter_stats(booth_id=None):
-    \"\"\"Get statistics about voters\"\"\"
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    if booth_id:
-        cursor.execute(
-            '''SELECT COUNT(*) as total, 
-                      SUM(CASE WHEN status = 'visited' THEN 1 ELSE 0 END) as visited
-               FROM voters WHERE booth_id = ?''',
-            (booth_id,)
-        )
-    else:
-        cursor.execute(
-            '''SELECT COUNT(*) as total, 
-                      SUM(CASE WHEN status = 'visited' THEN 1 ELSE 0 END) as visited
-               FROM voters'''
-        )
-    
-    result = cursor.fetchone()
-    conn.close()
-    return dict(result) if result else {'total': 0, 'visited': 0}
-
-def clear_all_data():
-    \"\"\"Clear all data from database\"\"\"
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute('DELETE FROM voters')
-    cursor.execute('DELETE FROM booths')
-    conn.commit()
-    conn.close()

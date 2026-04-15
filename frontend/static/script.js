@@ -253,8 +253,41 @@ function displaySearchResults(voters) {
     document.getElementById('noDataAlert').style.display = 'none';
 }
 
-function createVoterElement(voter) {\n    const div = document.createElement('div');\n    div.className = 'voter-item';\n\n    const statusBadge = voter.status || 'not_visited';\n    const statusDisplay = statusBadge.replace('_', ' ').charAt(0).toUpperCase() +\n        statusBadge.replace('_', ' ').slice(1);\n\n    const phoneDisplay = voter.phone_number ? `<div class="voter-phone"><strong>Phone:</strong> ${voter.phone_number}</div>` : '';\n\n    div.innerHTML = `\n        <div class="voter-name">${voter.voter_name}</div>\n        <div class="voter-id"><strong>ID:</strong> ${voter.voter_id}</div>\n        <div class="voter-booth"><strong>Booth:</strong> ${voter.booth_number}</div>\n        ${phoneDisplay}\n        <span class="voter-status ${statusBadge}">${statusDisplay}</span>\n        ${voter.custom_notes ? `<div class="voter-notes"><strong>Notes:</strong> ${voter.custom_notes}</div>` : ''}\n        <div class="voter-actions">\n            <button class="btn btn-sm btn-outline-primary" onclick="openUpdateModal(${voter.id}, '${voter.voter_name}', '${voter.voter_id}', '${voter.phone_number || ''}')">\n                <i class="bi bi-pencil"></i> Update\n            </button>\n            <button class="btn btn-sm btn-outline-success" onclick="markAsVisited(${voter.id})">\n                <i class="bi bi-check-circle"></i> Mark Visited\n            </button>\n        </div>\n    `;\n\n    return div;\n}
+function createVoterElement(voter) {
+    const div = document.createElement('div');
+    div.className = 'voter-item';
 
+    // Format the status for display
+    const statusBadge = voter.status || 'not_visited';
+    const statusDisplay = statusBadge.replace('_', ' ').charAt(0).toUpperCase() +
+                         statusBadge.replace('_', ' ').slice(1);
+
+    // Prepare optional fields
+    const phoneDisplay = voter.phone_number ?
+        `<div class="voter-phone"><strong>Phone:</strong> ${voter.phone_number}</div>` : '';
+    
+    const notesDisplay = voter.custom_notes ? 
+        `<div class="voter-notes"><strong>Notes:</strong> ${voter.custom_notes}</div>` : '';
+
+    // Set the inner HTML
+    div.innerHTML = `
+        <div class="voter-name">${voter.voter_name}</div>
+        <div class="voter-id"><strong>ID:</strong> ${voter.voter_id}</div>
+        <div class="voter-booth"><strong>Booth:</strong> ${voter.booth_number}</div>
+        ${phoneDisplay}
+        <span class="voter-status ${statusBadge}">${statusDisplay}</span>
+        ${notesDisplay}
+        <div class="voter-actions">
+            <button class="btn btn-sm btn-outline-primary" onclick="openUpdateModal(${voter.id}, '${voter.voter_name.replace(/'/g, "\\'")}', '${voter.voter_id}', '${voter.phone_number || ''}')">
+                <i class="bi bi-pencil"></i> Update
+            </button>
+            <button class="btn btn-sm btn-outline-success" onclick="markAsVisited(${voter.id})">
+                <i class="bi bi-check-circle"></i> Mark Visited
+            </button>
+        </div>`;
+
+    return div;
+}
 function clearSearch() {
     document.getElementById('searchInput').value = '';
     document.getElementById('votersContainer').innerHTML = '';
@@ -264,11 +297,12 @@ function clearSearch() {
 }
 
 // ==================== VOTER UPDATES ====================
-function openUpdateModal(voterId, voterName, voterId_epic, phoneNumber = '') {
+function openUpdateModal(voterId, voterName, voterId_epic, phoneNumber = '', houseNumber = '') {
     currentVoterId = voterId;
     document.getElementById('voterNameDisplay').value = voterName;
     document.getElementById('voterIdDisplay').value = voterId_epic;
     document.getElementById('phoneInput').value = phoneNumber;
+    document.getElementById('houseNumberInput').value = houseNumber;
     document.getElementById('statusSelect').value = 'not_visited';
     document.getElementById('notesInput').value = '';
 
@@ -280,14 +314,16 @@ function saveVoterUpdate() {
     const phone = document.getElementById('phoneInput').value.trim();
     const status = document.getElementById('statusSelect').value;
     const notes = document.getElementById('notesInput').value.trim();
+    const houseNumber = document.getElementById('houseNumberInput').value.trim();
 
-    if (!status && !phone && !notes) {
+    if (!status && !phone && !notes && !houseNumber) {
         showToast('Warning', 'Please provide at least one field to update', 'warning');
         return;
     }
 
     const payload = {};
     if (phone) payload.phone_number = phone;
+    if (houseNumber) payload.house_number = houseNumber;
     if (status) payload.status = status;
     if (notes) payload.custom_notes = notes;
 
