@@ -369,9 +369,11 @@ def not_found(error):
 @app.errorhandler(500)
 def internal_error(error):
     """Handle 500 errors"""
+    print("An internal server error occurred:")
+    print(traceback.format_exc())
     return jsonify({
         'status': 'error',
-        'message': 'Internal server error'
+        'message': f'Internal server error: {str(error)}'
     }), 500
 
 if __name__ == '__main__':
