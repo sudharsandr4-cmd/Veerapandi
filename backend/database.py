@@ -16,6 +16,7 @@ def get_db():
 def init_db():
     """Initialize database with tables"""
     conn = get_db()
+    
     cursor = conn.cursor()
     
     # Create Booths table
@@ -70,6 +71,29 @@ def init_db():
     ''')
     
     conn.commit()
+
+    # Check if any users exist. If not, create a default user.
+    cursor.execute('SELECT COUNT(id) FROM users')
+    user_count = cursor.fetchone()[0]
+
+    if user_count == 0:
+        print("\n--- NO USERS FOUND IN DATABASE ---")
+        print("Creating a default user to ensure the application is accessible on first run.")
+        default_username = 'adminveera1'
+        default_password = 'veerapandi911'
+        try:
+            cursor.execute(
+                'INSERT INTO users (username, password) VALUES (?, ?)',
+                (default_username, generate_password_hash(default_password))
+            )
+            conn.commit()
+            print("--> Default user created successfully!")
+            print(f"--> Username: {default_username}")
+            print(f"--> Password: {default_password}")
+            print("--> You can now log in with these credentials.\n")
+        except sqlite3.IntegrityError:
+            print("Default user appears to already exist.")
+
     conn.close()
 
 def add_booth(booth_number, booth_name):
