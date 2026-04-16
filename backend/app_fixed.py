@@ -150,9 +150,9 @@ def export_voters():
             status_condition = ""
         
         cursor.execute(f'''
-            SELECT voter_name, voter_id, house_number, booth_number, phone_number, status, custom_notes 
+            SELECT serial_number, voter_name, voter_id, house_number, booth_number, phone_number, status, custom_notes 
             FROM voters {status_condition}
-            ORDER BY booth_number, voter_name
+            ORDER BY booth_number, CAST(serial_number AS INTEGER), voter_name
         ''')
         voters = [dict(row) for row in cursor.fetchall()]
         conn.close()

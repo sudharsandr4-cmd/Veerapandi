@@ -182,22 +182,21 @@ def upload_file():
         else:
             df = pd.read_excel(filepath)
 
-        # Normalize column names (lowercase, replace space with underscore)
-        df.columns = [col.strip().lower().replace(' ', '_') for col in df.columns]
+        # Normalize column names (string cast, lowercase, replace space with underscore)
+        df.columns = [str(col).strip().lower().replace(' ', '_') for col in df.columns]
 
-        # Define expected columns and their mapping
-        column_map = {
-            'epic_number': 'voter_id',
-            'name': 'voter_name',
-            'house_number': 'house_number'
-        }
+        rename_mapping = {}
+        for col in df.columns:
+            if col in ['epic_number', 'epic', 'voter_id', 'id']:
+                rename_mapping[col] = 'voter_id'
+            elif col in ['name', 'voter_name', 'full_name', 'elector_name']:
+                rename_mapping[col] = 'voter_name'
+            elif col in ['sno', 'slno', 'sl_no', 's_no', 'serial_number', 'serial_no', 'serial']:
+                rename_mapping[col] = 'serial_number'
+            elif col in ['house_number', 'house_no']:
+                rename_mapping[col] = 'house_number'
         
-        # Check for required columns
-        required_cols = ['epic_number', 'name']
-        if not all(col in df.columns for col in required_cols):
-             return jsonify({'status': 'error', 'message': 'Missing required columns in file: EPIC Number, Name'}), 400
-
-        df.rename(columns=column_map, inplace=True)
+        df.rename(columns=rename_mapping, inplace=True)
 
         # Extract booth number from filename (e.g., booth-123.xlsx)
         match = re.search(r'(\d+)', original_name)
@@ -205,10 +204,21 @@ def upload_file():
             booth_number = match.group(1)
             df['booth_number'] = booth_number
         else:
-            return jsonify({'status': 'error', 'message': "Could not determine Booth Number. Please name your file like 'booth-123.xlsx' or 'part-42.csv'."}), 400
+            df['booth_number'] = '1'
+            
+        if 'serial_number' not in df.columns:
+            df['serial_number'] = range(1, len(df) + 1)
+            
+        if 'voter_id' not in df.columns:
+            df['voter_id'] = df['booth_number'].astype(str) + "_" + df['serial_number'].astype(str)
+            
+        if 'voter_name' not in df.columns:
+            df['voter_name'] = 'Unknown'
 
-        # Ensure voter_id is a string
-        df['voter_id'] = df['voter_id'].astype(str)
+        df = df.fillna('')
+        for col in ['voter_id', 'voter_name', 'booth_number', 'serial_number', 'house_number']:
+            if col in df.columns:
+                df[col] = df[col].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
 
         voters_data = df.to_dict('records')
         
@@ -361,7 +371,7 @@ def export_voters():
         
         from database import get_db
         conn = get_db() 
-        query = "SELECT voter_name, voter_id, house_number, booth_number, phone_number, status, custom_notes FROM voters ORDER BY booth_number, voter_name"
+        query = "SELECT serial_number, voter_name, voter_id, house_number, booth_number, phone_number, status, custom_notes FROM voters ORDER BY booth_number, CAST(serial_number AS INTEGER), voter_name"
         df = pd.read_sql_query(query, conn)
         conn.close()
         

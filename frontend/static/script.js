@@ -225,8 +225,8 @@ function performSearch() {
     const searchTerm = document.getElementById('searchInput').value.trim();
     const boothId = document.getElementById('boothSelect').value;
 
-    if (searchTerm.length < 2) {
-        showToast('Warning', 'Search term must be at least 2 characters', 'warning');
+    if (searchTerm.length === 0) {
+        showToast('Warning', 'Please enter a search term', 'warning');
         return;
     }
 
@@ -281,8 +281,15 @@ function createVoterElement(voter) {
 
     // Format the status for display
     const statusBadge = voter.status || 'not_visited';
-    const statusDisplay = statusBadge.replace('_', ' ').charAt(0).toUpperCase() +
+    let statusDisplay = statusBadge.replace('_', ' ').charAt(0).toUpperCase() +
                          statusBadge.replace('_', ' ').slice(1);
+
+    if (statusBadge === 'visited' || statusBadge === 'voted') {
+        statusDisplay = 'Visited / Phone Update';
+    }
+
+    const serialDisplay = voter.serial_number ? 
+        `<div class="voter-serial"><strong>S.No:</strong> ${voter.serial_number}</div>` : '';
 
     const houseNumberDisplay = voter.house_number ?
         `<div class="voter-house"><strong>House No:</strong> ${voter.house_number}</div>` : '';
@@ -294,6 +301,7 @@ function createVoterElement(voter) {
 
     div.innerHTML = `
         <div class="voter-name">${voter.voter_name}</div>
+        ${serialDisplay}
         <div class="voter-id"><strong>ID:</strong> ${voter.voter_id}</div>
         ${houseNumberDisplay}
         <div class="voter-booth"><strong>Booth:</strong> ${voter.booth_number}</div>
@@ -305,7 +313,7 @@ function createVoterElement(voter) {
                 <i class="bi bi-pencil"></i> Update
             </button>
             <button class="btn btn-sm btn-outline-success" onclick="markAsVisited(${voter.id})">
-                <i class="bi bi-check-circle"></i> Mark Visited
+                <i class="bi bi-check-circle"></i> Mark Visited / Phone Update
             </button>
         </div>`;
 
@@ -328,6 +336,17 @@ function openUpdateModal(voterId, voterName, voterId_epic, phoneNumber = '', hou
     document.getElementById('houseNumberInput').value = houseNumber;
     document.getElementById('statusSelect').value = 'not_visited';
     document.getElementById('notesInput').value = '';
+
+    // Update 'visited' or 'voted' option text dynamically
+    const statusSelect = document.getElementById('statusSelect');
+    if (statusSelect) {
+        Array.from(statusSelect.options).forEach(opt => {
+            if (opt.value === 'visited' || opt.text.toLowerCase().includes('voted') || opt.text.toLowerCase().includes('visited')) {
+                opt.text = 'Visited / Phone Update';
+                opt.value = 'visited';
+            }
+        });
+    }
 
     const modal = new bootstrap.Modal(document.getElementById('updateModal'));
     modal.show();
@@ -395,7 +414,7 @@ function markAsVisited(voterId) {
         })
         .then(data => {
             if (data && data.status === 'success') {
-                showToast('Success', 'Marked as visited', 'success');
+                showToast('Success', 'Marked as Visited / Phone Updated', 'success');
                 performSearch();
                 loadStats();
             }

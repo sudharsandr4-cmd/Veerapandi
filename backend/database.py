@@ -72,6 +72,13 @@ def init_db():
     
     conn.commit()
 
+    # Add serial_number column if it doesn't already exist from a previous schema
+    try:
+        cursor.execute('ALTER TABLE voters ADD COLUMN serial_number TEXT')
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass
+
     # Check if any users exist. If not, create a default user.
     cursor.execute('SELECT COUNT(id) FROM users')
     user_count = cursor.fetchone()[0]
@@ -176,21 +183,23 @@ def upsert_voters(voters_data: list):
         cursor.execute('SELECT id FROM booths WHERE booth_number = ?', (voter['booth_number'],))
         booth_id = cursor.fetchone()['id']
 
+        serial = voter.get('serial_number')
+
         if existing_voter:
             cursor.execute(
-                'UPDATE voters SET voter_name = ?, house_number = ?, booth_id = ?, booth_number = ? WHERE id = ?',
-                (voter['voter_name'], voter.get('house_number'), booth_id, voter['booth_number'], existing_voter['id'])
+                'UPDATE voters SET voter_name = ?, house_number = ?, booth_id = ?, booth_number = ?, serial_number = ? WHERE id = ?',
+                (voter['voter_name'], voter.get('house_number'), booth_id, voter['booth_number'], serial, existing_voter['id'])
             )
             updated_count += 1
         else:
-            add_voter(voter['voter_id'], voter['voter_name'], voter['booth_number'], voter.get('house_number'))
+            add_voter(voter['voter_id'], voter['voter_name'], voter['booth_number'], voter.get('house_number'), serial)
             added_count += 1
             
     conn.commit()
     conn.close()
     return added_count, updated_count
 
-def add_voter(voter_id, voter_name, booth_number, house_number=None):
+def add_voter(voter_id, voter_name, booth_number, house_number=None, serial_number=None):
     """Add a new voter to the database"""
     conn = get_db()
     cursor = conn.cursor()
@@ -207,9 +216,9 @@ def add_voter(voter_id, voter_name, booth_number, house_number=None):
     
     try:
         cursor.execute(
-            '''INSERT INTO voters (voter_id, voter_name, booth_id, booth_number, house_number) 
-               VALUES (?, ?, ?, ?, ?)''',
-            (voter_id, voter_name, booth_id, booth_number, house_number)
+            '''INSERT INTO voters (voter_id, voter_name, booth_id, booth_number, house_number, serial_number) 
+               VALUES (?, ?, ?, ?, ?, ?)''',
+            (voter_id, voter_name, booth_id, booth_number, house_number, serial_number)
         )
         conn.commit()
         voter_id_db = cursor.lastrowid
@@ -233,8 +242,8 @@ def get_voters_by_booth(booth_id):
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute(
-        '''SELECT id, voter_id, voter_name, house_number, booth_number, phone_number, status, custom_notes 
-           FROM voters WHERE booth_id = ? ORDER BY voter_name''',
+        '''SELECT id, voter_id, voter_name, house_number, booth_number, phone_number, status, custom_notes, serial_number 
+           FROM voters WHERE booth_id = ? ORDER BY CAST(serial_number AS INTEGER), voter_name''',
         (booth_id,)
     )
     voters = cursor.fetchall()
@@ -242,26 +251,26 @@ def get_voters_by_booth(booth_id):
     return [dict(voter) for voter in voters]
 
 def search_voters(search_term, booth_id=None):
-    """Search voters by name or voter ID"""
+    """Search voters by serial number, name or voter ID"""
     conn = get_db()
     cursor = conn.cursor()
     search_param = f'%{search_term}%'
     
     if booth_id:
         cursor.execute(
-            '''SELECT id, voter_id, voter_name, house_number, booth_number, phone_number, status, custom_notes 
+            '''SELECT id, voter_id, voter_name, house_number, booth_number, phone_number, status, custom_notes, serial_number 
                FROM voters 
-               WHERE booth_id = ? AND (voter_name LIKE ? OR voter_id LIKE ? OR phone_number LIKE ?)
-               ORDER BY voter_name''',
-            (booth_id, search_param, search_param, search_param)
+               WHERE booth_id = ? AND (serial_number = ? OR voter_name LIKE ? OR voter_id LIKE ? OR phone_number LIKE ?)
+               ORDER BY CAST(serial_number AS INTEGER), voter_name''',
+            (booth_id, search_term, search_param, search_param, search_param)
         )
     else:
         cursor.execute(
-            '''SELECT id, voter_id, voter_name, house_number, booth_number, phone_number, status, custom_notes 
+            '''SELECT id, voter_id, voter_name, house_number, booth_number, phone_number, status, custom_notes, serial_number 
                FROM voters 
-               WHERE voter_name LIKE ? OR voter_id LIKE ? OR phone_number LIKE ?
-               ORDER BY voter_name''',
-            (search_param, search_param, search_param)
+               WHERE serial_number = ? OR voter_name LIKE ? OR voter_id LIKE ? OR phone_number LIKE ?
+               ORDER BY CAST(serial_number AS INTEGER), voter_name''',
+            (search_term, search_param, search_param, search_param)
         )
     
     voters = cursor.fetchall()
