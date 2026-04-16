@@ -84,10 +84,10 @@ def search():
         search_term = request.args.get('q', '').strip()
         booth_id = request.args.get('booth_id')
         
-        if not search_term or len(search_term) < 2:
+        if not search_term:
             return jsonify({
                 'status': 'error', 
-                'message': 'Search term must be at least 2 characters'
+                'message': 'Search term is required'
             }), 400
         
         booth_id = int(booth_id) if booth_id else None

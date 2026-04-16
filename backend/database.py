@@ -174,14 +174,17 @@ def upsert_voters(voters_data: list):
     # Ensure all booths from the file exist before processing voters
     booth_numbers = {v['booth_number'] for v in voters_data if v.get('booth_number')}
     for booth_num in booth_numbers:
-        add_booth(booth_num, f'Booth {booth_num}')
+        cursor.execute('SELECT id FROM booths WHERE booth_number = ?', (booth_num,))
+        if not cursor.fetchone():
+            cursor.execute('INSERT INTO booths (booth_number, booth_name) VALUES (?, ?)', (booth_num, f'Booth {booth_num}'))
 
     for voter in voters_data:
         cursor.execute('SELECT id FROM voters WHERE voter_id = ?', (voter['voter_id'],))
         existing_voter = cursor.fetchone()
         
         cursor.execute('SELECT id FROM booths WHERE booth_number = ?', (voter['booth_number'],))
-        booth_id = cursor.fetchone()['id']
+        booth_row = cursor.fetchone()
+        booth_id = booth_row['id'] if booth_row else None
 
         serial = voter.get('serial_number')
 
@@ -192,7 +195,11 @@ def upsert_voters(voters_data: list):
             )
             updated_count += 1
         else:
-            add_voter(voter['voter_id'], voter['voter_name'], voter['booth_number'], voter.get('house_number'), serial)
+            cursor.execute(
+                '''INSERT INTO voters (voter_id, voter_name, booth_id, booth_number, house_number, serial_number) 
+                   VALUES (?, ?, ?, ?, ?, ?)''',
+                (voter['voter_id'], voter['voter_name'], booth_id, voter['booth_number'], voter.get('house_number'), serial)
+            )
             added_count += 1
             
     conn.commit()

@@ -198,6 +198,9 @@ def upload_file():
         
         df.rename(columns=rename_mapping, inplace=True)
 
+        # Drop completely empty rows to avoid processing blank data
+        df.dropna(how='all', inplace=True)
+
         # Extract booth number from filename (e.g., booth-123.xlsx)
         match = re.search(r'(\d+)', original_name)
         if match:
@@ -210,15 +213,21 @@ def upload_file():
             df['serial_number'] = range(1, len(df) + 1)
             
         if 'voter_id' not in df.columns:
-            df['voter_id'] = df['booth_number'].astype(str) + "_" + df['serial_number'].astype(str)
+            df['voter_id'] = df['booth_number'].astype(str) + "_row_" + df.index.astype(str)
             
         if 'voter_name' not in df.columns:
             df['voter_name'] = 'Unknown'
 
         df = df.fillna('')
+
         for col in ['voter_id', 'voter_name', 'booth_number', 'serial_number', 'house_number']:
             if col in df.columns:
                 df[col] = df[col].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
+
+        # Ensure any empty voter_id fields get a unique fallback ID so they don't overwrite each other
+        mask = df['voter_id'] == ''
+        if mask.any():
+            df.loc[mask, 'voter_id'] = df.loc[mask, 'booth_number'].astype(str) + "_row_" + df[mask].index.astype(str)
 
         voters_data = df.to_dict('records')
         
@@ -319,10 +328,10 @@ def search():
         search_term = request.args.get('q', '').strip()
         booth_id = request.args.get('booth_id')
         
-        if not search_term or len(search_term) < 2:
+        if not search_term:
             return jsonify({
                 'status': 'error', 
-                'message': 'Search term must be at least 2 characters'
+                'message': 'Search term is required'
             }), 400
         
         booth_id = int(booth_id) if booth_id else None
